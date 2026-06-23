@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS bookings;
+ALTER TABLE inventory DROP COLUMN IF EXISTS booking_open;

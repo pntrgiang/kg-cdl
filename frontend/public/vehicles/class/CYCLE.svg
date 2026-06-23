@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="300" viewBox="0 0 480 300">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#3b2a78"/><stop offset="1" stop-color="#2a1d5c"/>
+  </linearGradient></defs>
+  <rect width="480" height="300" fill="url(#g)"/>
+  <g fill="none" stroke="#c6a15b" stroke-width="2" opacity="0.85">
+    <path d="M70 190 q15-55 60-58 l120 0 q40 0 60 30 l40 6 q20 4 20 22 l0 8 -360 0 z"/>
+    <circle cx="135" cy="200" r="26"/><circle cx="345" cy="200" r="26"/>
+  </g>
+  <text x="240" y="265" font-family="Georgia, serif" font-size="26" fill="#fff" text-anchor="middle" letter-spacing="2">Cycle</text>
+  <text x="240" y="45" font-family="Georgia, serif" font-size="20" fill="#c6a15b" text-anchor="middle" letter-spacing="4">KANJI GROUP</text>
+</svg>

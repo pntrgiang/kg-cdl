@@ -1,0 +1,36 @@
+# env
+.env
+*.env
+!.env.example
+
+# Go
+backend/bin/
+backend/tmp/
+*.out
+
+# Node / Nuxt
+node_modules/
+frontend/.nuxt/
+frontend/.output/
+frontend/dist/
+.DS_Store
+
+# editor
+.idea/
+.vscode/
+
+# seed: file thô 9.6MB tải từ internet (tái tạo bằng `make vehicles-data`)
+db/seed/gta_vehicles_raw.json
+# ảnh xe thật (~184MB) tải từ internet (tái tạo bằng `make vehicle-images`)
+frontend/public/vehicles/img/
+db/seed/update_images.sql
+db/seed/update_descriptions.sql
+db/seed/update_stats.sql
+
+# debug / scratch (ảnh tham khảo, screenshot)
+img-debug/
+img-temp/
+
+# ảnh scratch/dư thừa (không dùng trong app)
+img/batch-1/
+img/Gia_tien_xe.jpg

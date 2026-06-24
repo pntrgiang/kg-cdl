@@ -4,7 +4,9 @@ const api = useApi()
 
 // danh sách voucher (chỉ để chọn làm phần thưởng — quản lý tạo voucher ở tab Voucher)
 const { data: vouchers } = await useAsyncData('vouchers', () => api.get<any[]>('/api/vouchers'))
-const { data: events, refresh: refreshEvents } = await useAsyncData('mgr-events', () => api.get<any[]>('/api/events'))
+// chỉ voucher còn hiệu lực (chưa bị huỷ) mới được chọn làm phần thưởng
+const availableVouchers = computed(() => (vouchers.value || []).filter((v: any) => !v.cancelled_at))
+const { data: events, refresh: refreshEvents } = await useAsyncData('mgr-events', () => api.get<any[]>('/api/manage/events'))
 const msg = ref(''); const okMsg = ref('')
 
 // ── tạo sự kiện quay số (thưởng là voucher) ──
@@ -13,12 +15,28 @@ const eForm = reactive({
   voucher_id: null as number | null, winners_count: 1,
 })
 
+// hạn đăng ký (cuối ngày, GMT+7) để so với hạn voucher
+const deadlineEnd = computed(() => (eForm.deadline ? new Date(`${eForm.deadline}T23:59:59+07:00`) : null))
+// voucher hợp lệ làm thưởng: HSD phải SAU hạn đăng ký (người trúng nhận voucher sau khi quay số)
+function voucherValid(v: any) {
+  if (!v?.expires_at || !deadlineEnd.value) return true
+  return new Date(v.expires_at) > deadlineEnd.value
+}
+const selectedVoucher = computed(() => availableVouchers.value.find((v: any) => v.id === eForm.voucher_id) || null)
+// cảnh báo khi voucher đã chọn hết hạn ≤ hạn đăng ký (vd khi đổi hạn đăng ký muộn hơn HSD voucher)
+const voucherWarn = computed(() => {
+  const v = selectedVoucher.value
+  if (!v || voucherValid(v)) return ''
+  return `⚠️ Voucher "${v.name}" hết hạn ${formatDate(v.expires_at)} — phải SAU hạn đăng ký (${formatDate(eForm.deadline)}). Hãy chọn voucher khác hoặc đặt hạn đăng ký sớm hơn.`
+})
+
 async function createEvent() {
   msg.value = ''; okMsg.value = ''
   if (!eForm.title.trim()) { msg.value = 'Cần nhập tiêu đề sự kiện.'; return }
   if (!eForm.deadline) { msg.value = 'Cần chọn hạn đăng ký.'; return }
   if (!(Number(eForm.winners_count) >= 1)) { msg.value = 'Số người trúng phải ≥ 1.'; return }
   if (!eForm.voucher_id) { msg.value = 'Cần chọn voucher làm phần thưởng (tạo ở tab Voucher nếu chưa có).'; return }
+  if (voucherWarn.value) { msg.value = voucherWarn.value; return }
   try {
     await api.post('/api/events/draw', {
       title: eForm.title, description: eForm.description,
@@ -29,6 +47,21 @@ async function createEvent() {
     eForm.title = eForm.description = ''
     await refreshEvents()
   } catch (e: any) { msg.value = e?.data?.error || 'Tạo sự kiện thất bại.' }
+}
+
+// ── huỷ sự kiện (chỉ khi chưa quay số, bắt buộc lý do) ──
+const cancelFor = ref<number | null>(null)
+const cancelReason = ref('')
+function openCancel(e: any) { cancelFor.value = e.id; cancelReason.value = ''; msg.value = ''; okMsg.value = '' }
+async function doCancel(e: any) {
+  msg.value = ''
+  if (!cancelReason.value.trim()) { msg.value = 'Bắt buộc nhập lý do huỷ sự kiện.'; return }
+  try {
+    await api.post(`/api/events/${e.id}/cancel`, { reason: cancelReason.value.trim() })
+    okMsg.value = `Đã huỷ sự kiện "${e.title}".`
+    cancelFor.value = null
+    await refreshEvents()
+  } catch (err: any) { msg.value = err?.data?.error || 'Huỷ sự kiện thất bại.' }
 }
 
 // ── quay số: mở modal có vòng quay, chỉ quay khi bấm "Bắt đầu" ──
@@ -121,14 +154,18 @@ const fmtDate = (s: string) => formatDate(s)
           <label class="label">Voucher làm phần thưởng</label>
           <select v-model="eForm.voucher_id" class="input">
             <option :value="null" disabled>— Chọn voucher —</option>
-            <option v-for="v in vouchers" :key="v.id" :value="v.id">{{ v.name }} ({{ v.discount_percent }}%)</option>
+            <option v-for="v in availableVouchers" :key="v.id" :value="v.id" :disabled="!voucherValid(v)">
+              {{ v.name }} ({{ v.discount_percent }}%) — HSD {{ fmtDate(v.expires_at) }}{{ !voucherValid(v) ? ' · hết hạn ≤ hạn ĐK' : '' }}
+            </option>
           </select>
-          <p v-if="!vouchers?.length" class="mt-1 text-xs text-slate-400">
+          <p v-if="voucherWarn" class="mt-1 text-xs font-medium text-red-600">{{ voucherWarn }}</p>
+          <p v-else-if="eForm.deadline" class="mt-1 text-xs text-slate-400">Chỉ chọn được voucher có hạn sử dụng <strong>sau</strong> hạn đăng ký ({{ fmtDate(eForm.deadline) }}).</p>
+          <p v-if="!availableVouchers.length" class="mt-1 text-xs text-slate-400">
             Chưa có voucher — hãy tạo ở tab <NuxtLink to="/staff/vouchers" class="text-brand-600 hover:underline">Voucher</NuxtLink> trước.
           </p>
         </div>
 
-        <button class="btn-gold md:col-span-2" @click="createEvent">Tạo sự kiện</button>
+        <button class="btn-gold md:col-span-2 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!!voucherWarn" @click="createEvent">Tạo sự kiện</button>
       </div>
     </div>
 
@@ -138,13 +175,17 @@ const fmtDate = (s: string) => formatDate(s)
       <div v-for="e in (events || []).filter((x:any)=>x.draw_status)" :key="e.id" class="card p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <strong class="text-brand-900">{{ e.title }}</strong>
-            <span class="badge ml-2" :class="statusLabel[e.draw_status]?.c">{{ statusLabel[e.draw_status]?.t }}</span>
+            <strong class="text-brand-900" :class="e.cancelled_at ? 'text-slate-400 line-through' : ''">{{ e.title }}</strong>
+            <span v-if="e.cancelled_at" class="badge ml-2 bg-red-100 text-red-600">Đã huỷ</span>
+            <span v-else class="badge ml-2" :class="statusLabel[e.draw_status]?.c">{{ statusLabel[e.draw_status]?.t }}</span>
           </div>
           <div class="flex gap-2">
-            <button v-if="e.draw_status === 'open'" class="btn-primary !py-1.5 text-xs" @click="openDraw(e)">🎰 Quay số</button>
-            <button v-if="e.draw_status === 'drawn'" class="btn-gold !py-1.5 text-xs" @click="openDraw(e)">Xem & xác nhận</button>
-            <button v-if="e.draw_status === 'published'" class="btn-ghost !py-1.5 text-xs" @click="openDraw(e)">👁️ Xem chi tiết</button>
+            <template v-if="!e.cancelled_at">
+              <button v-if="e.draw_status === 'open'" class="btn-primary !py-1.5 text-xs" @click="openDraw(e)">🎰 Quay số</button>
+              <button v-if="e.draw_status === 'open'" class="rounded-lg px-3 py-1.5 text-xs font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-50" @click="openCancel(e)">Huỷ</button>
+              <button v-if="e.draw_status === 'drawn'" class="btn-gold !py-1.5 text-xs" @click="openDraw(e)">Xem & xác nhận</button>
+              <button v-if="e.draw_status === 'published'" class="btn-ghost !py-1.5 text-xs" @click="openDraw(e)">👁️ Xem chi tiết</button>
+            </template>
           </div>
         </div>
         <div class="mt-2 flex flex-wrap gap-2 text-xs">
@@ -152,6 +193,19 @@ const fmtDate = (s: string) => formatDate(s)
           <span class="badge bg-slate-100 text-slate-600">Số trúng: {{ e.winners_count }}</span>
           <span class="badge bg-slate-100 text-slate-600">Hạn: {{ fmtDate(e.register_deadline) }}</span>
           <span class="badge bg-slate-100 text-slate-600">Đã đăng ký: {{ e.eligible_count }}</span>
+        </div>
+
+        <p v-if="e.cancelled_at" class="mt-2 text-xs text-red-500">↳ Đã huỷ{{ e.cancel_reason ? ' — lý do: ' + e.cancel_reason : '' }}</p>
+
+        <!-- form huỷ sự kiện -->
+        <div v-if="cancelFor === e.id" class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+          <label class="label">Lý do huỷ sự kiện (bắt buộc)</label>
+          <input v-model="cancelReason" class="input !py-1.5 text-sm" placeholder="VD: tạo nhầm, đổi thể lệ…" @keyup.enter="doCancel(e)" />
+          <p class="mt-1 text-xs text-slate-500">Chỉ huỷ được sự kiện <strong>chưa quay số</strong>. Sự kiện đã huỷ vẫn còn trong danh sách (đánh dấu "Đã huỷ") nhưng ẩn với khách hàng.</p>
+          <div class="mt-2 flex justify-end gap-2">
+            <button class="btn-ghost !py-1.5 text-sm" @click="cancelFor = null">Đóng</button>
+            <button class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700" @click="doCancel(e)">Xác nhận huỷ</button>
+          </div>
         </div>
         <div v-if="e.winners?.length" class="mt-3 border-t pt-2">
           <div class="mb-1 text-xs font-medium text-slate-500">Người trúng:</div>

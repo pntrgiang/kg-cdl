@@ -104,5 +104,10 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 		handleStoreErr(w, err)
 		return
 	}
+	// sự kiện đã huỷ -> coi như không tồn tại (khách không được xem).
+	if e.CancelledAt != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
 	writeJSON(w, http.StatusOK, e)
 }

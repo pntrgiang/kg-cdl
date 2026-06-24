@@ -116,6 +116,8 @@ func handleStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusBadRequest, "không phải sự kiện quay số")
 	case errors.Is(err, store.ErrBadDrawState):
 		writeErr(w, http.StatusConflict, "trạng thái quay số không hợp lệ (đã quay/đã công bố?)")
+	case errors.Is(err, store.ErrEventNotCancelable):
+		writeErr(w, http.StatusConflict, "chỉ có thể huỷ sự kiện CHƯA quay số")
 	case errors.Is(err, store.ErrNoEligible):
 		writeErr(w, http.StatusConflict, "chưa có khách nào đăng ký tham gia")
 	case errors.Is(err, store.ErrRegistrationClosed):

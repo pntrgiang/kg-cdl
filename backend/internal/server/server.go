@@ -149,6 +149,8 @@ func (s *Server) routes() {
 					r.Get("/events/{id}/entrants", s.handleEventEntrants)
 						r.Post("/events/{id}/draw", s.handleDrawRun)
 					r.Post("/events/{id}/redraw", s.handleDrawRedraw)
+						r.Get("/manage/events", s.handleListEventsManage)
+						r.Post("/events/{id}/cancel", s.handleCancelEvent)
 					r.Post("/events/{id}/confirm", s.handleDrawConfirm)
 				})
 

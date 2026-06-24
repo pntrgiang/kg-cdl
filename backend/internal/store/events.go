@@ -62,6 +62,7 @@ func (s *Store) CreateEvent(ctx context.Context, title, description, typ string,
 const eventSelect = `
 SELECT e.id, e.title, COALESCE(e.description,''), e.type, e.starts_at, e.ends_at, e.is_active, e.created_by, e.created_at,
        e.register_deadline, e.prize_type, e.voucher_id, e.prize_vehicle_catalog_id, e.winners_count, e.draw_status,
+       e.cancelled_at, COALESCE(e.cancel_reason,''),
        COALESCE(vc.name, vh.name, '') AS prize_name
 FROM events e
 LEFT JOIN vouchers vc ON vc.id = e.voucher_id
@@ -70,14 +71,16 @@ LEFT JOIN vehicle_catalog vh ON vh.id = e.prize_vehicle_catalog_id`
 func scanEvent(row pgx.Row) (Event, error) {
 	var e Event
 	err := row.Scan(&e.ID, &e.Title, &e.Description, &e.Type, &e.StartsAt, &e.EndsAt, &e.IsActive, &e.CreatedBy, &e.CreatedAt,
-		&e.RegisterDeadline, &e.PrizeType, &e.VoucherID, &e.PrizeVehicleID, &e.WinnersCount, &e.DrawStatus, &e.PrizeName)
+		&e.RegisterDeadline, &e.PrizeType, &e.VoucherID, &e.PrizeVehicleID, &e.WinnersCount, &e.DrawStatus,
+		&e.CancelledAt, &e.CancelReason, &e.PrizeName)
 	return e, err
 }
 
+// ListEvents: onlyActive=true cho KHÁCH (loại sự kiện đã huỷ); false cho QUẢN LÝ (xem tất cả kể cả đã huỷ).
 func (s *Store) ListEvents(ctx context.Context, onlyActive bool) ([]Event, error) {
 	q := eventSelect
 	if onlyActive {
-		q += ` WHERE e.is_active`
+		q += ` WHERE e.is_active AND e.cancelled_at IS NULL`
 	}
 	q += ` ORDER BY e.created_at DESC`
 	rows, err := s.pool.Query(ctx, q)

@@ -11,7 +11,46 @@ var (
 	ErrBadDrawState       = errors.New("invalid draw state")
 	ErrNoEligible         = errors.New("no eligible participants")
 	ErrRegistrationClosed = errors.New("registration closed")
+	ErrEventNotCancelable = errors.New("event cannot be cancelled")
 )
+
+// CancelEvent (quản lý) huỷ một sự kiện CHƯA quay số: vô hiệu hoá + ghi log lý do.
+// Chỉ huỷ được khi draw_status='open' (chưa quay) và còn hoạt động.
+func (s *Store) CancelEvent(ctx context.Context, eventID, cancelledBy int64, actorName, reason string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var drawStatus *string
+	var title string
+	var cancelledAt *time.Time
+	err = tx.QueryRow(ctx, `SELECT draw_status, title, cancelled_at FROM events WHERE id = $1 FOR UPDATE`, eventID).
+		Scan(&drawStatus, &title, &cancelledAt)
+	if err != nil {
+		return mapNotFound(err)
+	}
+	if drawStatus == nil {
+		return ErrNotDrawEvent
+	}
+	if cancelledAt != nil || *drawStatus != "open" {
+		return ErrEventNotCancelable // đã quay số / đã huỷ trước đó
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE events SET cancelled_at = now(), cancelled_by = $2, cancel_reason = $3 WHERE id = $1`,
+		eventID, cancelledBy, reason); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO activity_logs (actor_id, actor_name, action, target_type, target_id, detail)
+		VALUES ($1,$2,'event.cancel','event',$3, jsonb_build_object('title',$4::text,'reason',$5::text))`,
+		cancelledBy, actorName, eventID, title, reason); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
 
 // CreateDrawEvent tạo sự kiện quay số trúng thưởng (chỉ manager — enforce ở handler).
 func (s *Store) CreateDrawEvent(ctx context.Context, title, description string, deadline time.Time, prizeType string, voucherID, vehicleCatalogID *int64, winnersCount int, createdBy int64) (Event, error) {

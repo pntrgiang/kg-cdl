@@ -221,6 +221,21 @@ func (s *Server) handleCreateDrawEvent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "cần chọn voucher làm phần thưởng")
 		return
 	}
+	// ràng buộc: voucher phải còn hiệu lực & HẠN VOUCHER PHẢI SAU HẠN ĐĂNG KÝ
+	// (người trúng chỉ nhận voucher sau khi quay số — diễn ra sau hạn đăng ký).
+	v, verr := s.store.GetVoucher(r.Context(), *req.VoucherID)
+	if verr != nil {
+		writeErr(w, http.StatusBadRequest, "voucher làm phần thưởng không tồn tại")
+		return
+	}
+	if v.CancelledAt != nil {
+		writeErr(w, http.StatusBadRequest, "voucher đã bị huỷ, không thể làm phần thưởng")
+		return
+	}
+	if v.ExpiresAt != nil && !v.ExpiresAt.After(req.RegisterDeadline) {
+		writeErr(w, http.StatusBadRequest, "hạn sử dụng voucher phải SAU hạn đăng ký sự kiện")
+		return
+	}
 	actor, _ := identity(r)
 	e, err := s.store.CreateDrawEvent(r.Context(), req.Title, req.Description, req.RegisterDeadline,
 		"voucher", req.VoucherID, nil, req.WinnersCount, actor.SubjectID)
@@ -263,6 +278,42 @@ func (s *Server) handleDrawRun(w http.ResponseWriter, r *http.Request) {
 
 type redrawReq struct {
 	Reason string `json:"reason"`
+}
+
+// handleListEventsManage (chỉ quản lý): danh sách TẤT CẢ sự kiện kể cả đã huỷ.
+func (s *Server) handleListEventsManage(w http.ResponseWriter, r *http.Request) {
+	events, err := s.store.ListEvents(r.Context(), false)
+	if err != nil {
+		handleStoreErr(w, err)
+		return
+	}
+	if events == nil {
+		events = []store.Event{}
+	}
+	writeJSON(w, http.StatusOK, events)
+}
+
+// handleCancelEvent (chỉ quản lý): huỷ sự kiện chưa quay số (bắt buộc lý do).
+func (s *Server) handleCancelEvent(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlID(r)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "id không hợp lệ")
+		return
+	}
+	var req redrawReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		writeErr(w, http.StatusBadRequest, "bắt buộc nhập lý do huỷ sự kiện")
+		return
+	}
+	actor, _ := identity(r)
+	if err := s.store.CancelEvent(r.Context(), id, actor.SubjectID, s.actorName(r.Context(), actor), strings.TrimSpace(req.Reason)); err != nil {
+		handleStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
 func (s *Server) handleDrawRedraw(w http.ResponseWriter, r *http.Request) {

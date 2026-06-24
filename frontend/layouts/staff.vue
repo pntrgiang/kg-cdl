@@ -33,10 +33,40 @@ watch(() => route.fullPath, () => { navOpen.value = false })
 
 <template>
   <div class="flex min-h-screen flex-col bg-slate-50">
-    <!-- nền mờ: bấm ngoài menu để đóng (chỉ khi menu mở trên mobile) -->
-    <div v-if="navOpen" class="fixed inset-0 z-30 bg-black/20 md:hidden" @click="navOpen = false" />
+    <!-- nền mờ -->
+    <div
+      class="fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 md:hidden"
+      :class="navOpen ? 'opacity-100' : 'pointer-events-none opacity-0'"
+      @click="navOpen = false"
+    />
+    <!-- ngăn kéo trượt từ trái -->
+    <aside
+      class="fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col bg-gradient-to-b from-brand-900 to-brand-800 text-white shadow-2xl transition-transform duration-300 ease-out md:hidden"
+      :class="navOpen ? 'translate-x-0' : '-translate-x-full'"
+    >
+      <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3.5">
+        <span class="flex items-center gap-2">
+          <span class="font-serif font-bold tracking-wide text-gold-400">KANJI GROUP</span>
+          <span class="badge bg-white/15 text-white">{{ roleLabel }}</span>
+        </span>
+        <button class="rounded-lg p-1 text-white/80 hover:bg-white/10 hover:text-white" aria-label="Đóng menu" @click="navOpen = false">✕</button>
+      </div>
+      <nav class="min-h-0 flex-1 overflow-auto p-2">
+        <NuxtLink
+          v-for="l in links" :key="l.to" :to="l.to"
+          class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-brand-100 transition-colors hover:bg-white/10"
+          active-class="bg-white/15 text-white"
+        ><span>{{ l.icon }}</span>{{ l.label }}</NuxtLink>
+      </nav>
+      <!-- hành động tài khoản -->
+      <div class="shrink-0 border-t border-white/10 p-2">
+        <div class="px-3 py-1 text-xs text-brand-200">{{ auth.displayName }}</div>
+        <NuxtLink to="/" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-gold-400 hover:bg-white/10">🏠 Trang khách</NuxtLink>
+        <button class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-brand-100 hover:bg-white/10" @click="doLogout">🚪 Đăng xuất</button>
+      </div>
+    </aside>
 
-    <header class="relative z-40 bg-gradient-to-r from-brand-900 to-brand-800 text-white">
+    <header class="bg-gradient-to-r from-brand-900 to-brand-800 text-white">
       <div class="flex items-center justify-between gap-2 px-3 py-3 sm:px-4">
         <div class="flex min-w-0 items-center gap-2">
           <button
@@ -49,7 +79,7 @@ watch(() => route.fullPath, () => { navOpen.value = false })
             <span class="badge hidden bg-white/15 text-white sm:inline-flex">{{ roleLabel }}</span>
           </NuxtLink>
         </div>
-        <div class="flex shrink-0 items-center gap-2 text-sm">
+        <div class="hidden shrink-0 items-center gap-2 text-sm md:flex">
           <NuxtLink
             to="/"
             class="inline-flex items-center gap-1.5 rounded-lg border border-gold-400/60 bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-gold-400 transition hover:bg-gold-400 hover:text-brand-950"
@@ -62,17 +92,6 @@ watch(() => route.fullPath, () => { navOpen.value = false })
           <button class="btn-gold !py-1.5 text-xs" @click="doLogout">Đăng xuất</button>
         </div>
       </div>
-
-      <!-- menu điều hướng mobile -->
-      <nav v-if="navOpen" class="grid grid-cols-2 gap-1 border-t border-white/10 px-3 pb-3 pt-2 sm:grid-cols-3 md:hidden">
-        <NuxtLink
-          v-for="l in links" :key="l.to" :to="l.to"
-          class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-brand-100 transition-colors hover:bg-white/10"
-          active-class="bg-white/15 text-white"
-        >
-          <span>{{ l.icon }}</span>{{ l.label }}
-        </NuxtLink>
-      </nav>
     </header>
 
     <div class="mx-auto flex w-full max-w-7xl flex-1 gap-6 px-4 py-6">

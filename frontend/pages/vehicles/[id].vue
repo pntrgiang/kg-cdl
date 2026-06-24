@@ -123,7 +123,7 @@ async function submitBooking() {
     <NuxtLink to="/" class="mb-4 inline-block text-sm text-brand-600 hover:underline">← Về showroom</NuxtLink>
     <div v-if="error" class="card p-12 text-center text-slate-400">Không tìm thấy xe.</div>
     <div v-else-if="v">
-    <div class="grid gap-6 md:grid-cols-2">
+    <div class="grid items-start gap-6 md:grid-cols-2">
       <div class="card overflow-hidden">
         <div class="relative">
           <VehicleImageViewer :src="img" :alt="v.name" />
@@ -153,7 +153,15 @@ async function submitBooking() {
 
         <!-- đặt lịch xem/mua xe -->
         <div v-if="v.booking_open" class="mt-4">
-          <button class="btn-gold w-full sm:w-auto" @click="openBooking">📅 Đặt lịch đến xem xe</button>
+          <ClientOnly>
+            <div v-if="auth.isUser" class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              Bạn đang đăng nhập với tư cách <strong>nhân viên Car Dealer</strong> — không thể sử dụng tính năng đặt lịch dành cho khách hàng.
+            </div>
+            <button v-else class="btn-gold w-full sm:w-auto" @click="openBooking">📅 Đặt lịch đến xem xe</button>
+            <template #fallback>
+              <button class="btn-gold w-full sm:w-auto" @click="openBooking">📅 Đặt lịch đến xem xe</button>
+            </template>
+          </ClientOnly>
           <p v-if="bookingOk" class="mt-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{{ bookingOk }}</p>
         </div>
 

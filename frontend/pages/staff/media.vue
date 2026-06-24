@@ -33,7 +33,9 @@ async function uploadPopup(e: Event) {
   try {
     const fd = new FormData(); fd.append('file', f)
     await api.post('/api/release-popup-upload', fd)
-    okMsg.value = 'Đã tải ảnh popup lên (ghi đè /release-popup.jpg).'
+    // ghi đè cùng tên file -> thêm "phiên bản" vào URL để cache-bust, đảm bảo khách thấy ảnh mới ngay
+    await api.put('/api/release-modal', { image: `/api/uploads/release-popup.jpg?v=${Date.now()}`, target: popup.target || '/upcoming' })
+    okMsg.value = 'Đã tải ảnh popup lên (ghi đè & cập nhật ảnh mới ngay).'
     await refreshCfg()
   } catch (e: any) { msg.value = e?.data?.error || 'Tải ảnh thất bại.' }
   finally { popupUploading.value = false; (e.target as HTMLInputElement).value = '' }

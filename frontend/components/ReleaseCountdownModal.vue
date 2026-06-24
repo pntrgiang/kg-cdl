@@ -2,7 +2,6 @@
 // Popup thông báo mở bán — hiện ảnh mỗi khi tải/mở trang mới ở giao diện khách.
 // Bấm vào ảnh -> chuyển tới đích do quản lý đặt (xe sắp mở bán hoặc sự kiện).
 const api = useApi()
-const auth = useAuthStore()
 
 const open = ref(false)
 const imageUrl = ref('')
@@ -10,7 +9,7 @@ const target = ref('/upcoming')
 const imgError = ref(false)
 
 onMounted(async () => {
-  if (auth.isUser) return // không hiện cho nhân viên/quản lý
+  // Popup hiện cho TẤT CẢ người xem giao diện khách (kể cả nhân viên/quản lý/dev).
   try {
     const r = await api.get<{ modal_image: string; modal_target: string }>('/api/release-info')
     imageUrl.value = r.modal_image || ''

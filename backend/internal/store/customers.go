@@ -6,22 +6,23 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const customerCols = `id, username, full_name, phone, national_id, rank, total_spent,
+const customerCols = `id, username, full_name, phone, national_id, gender,
+	to_char(birth_date,'YYYY-MM-DD') AS birth_date, rank, total_spent,
 	last_purchase_at, claimed_at, is_active, created_at`
 
 func scanCustomer(row pgx.Row) (Customer, error) {
 	var c Customer
-	err := row.Scan(&c.ID, &c.Username, &c.FullName, &c.Phone, &c.NationalID, &c.Rank,
-		&c.TotalSpent, &c.LastPurchase, &c.ClaimedAt, &c.IsActive, &c.CreatedAt)
+	err := row.Scan(&c.ID, &c.Username, &c.FullName, &c.Phone, &c.NationalID, &c.Gender, &c.BirthDate,
+		&c.Rank, &c.TotalSpent, &c.LastPurchase, &c.ClaimedAt, &c.IsActive, &c.CreatedAt)
 	return c, err
 }
 
 // CreateCustomerByStaff tạo khách hàng từ nhân viên (không có tài khoản đăng nhập).
-func (s *Store) CreateCustomerByStaff(ctx context.Context, fullName, phone, nationalID string, createdBy int64) (Customer, error) {
+func (s *Store) CreateCustomerByStaff(ctx context.Context, fullName, phone, nationalID string, gender, birthDate *string, createdBy int64) (Customer, error) {
 	return scanCustomer(s.pool.QueryRow(ctx, `
-		INSERT INTO customers (full_name, phone, national_id, created_by)
-		VALUES ($1, $2, $3, $4)
-		RETURNING `+customerCols, fullName, phone, nationalID, createdBy))
+		INSERT INTO customers (full_name, phone, national_id, gender, birth_date, created_by)
+		VALUES ($1, $2, $3, $4, $5::date, $6)
+		RETURNING `+customerCols, fullName, phone, nationalID, gender, birthDate, createdBy))
 }
 
 // GetCustomerByNationalID dùng cho luồng claim.
@@ -43,7 +44,7 @@ func (s *Store) GetCustomerByUsername(ctx context.Context, username string) (Cus
 	var hash *string
 	err := s.pool.QueryRow(ctx, `
 		SELECT `+customerCols+`, password_hash FROM customers WHERE username = $1`, username,
-	).Scan(&c.ID, &c.Username, &c.FullName, &c.Phone, &c.NationalID, &c.Rank, &c.TotalSpent,
+	).Scan(&c.ID, &c.Username, &c.FullName, &c.Phone, &c.NationalID, &c.Gender, &c.BirthDate, &c.Rank, &c.TotalSpent,
 		&c.LastPurchase, &c.ClaimedAt, &c.IsActive, &c.CreatedAt, &hash)
 	h := ""
 	if hash != nil {
@@ -135,11 +136,11 @@ func (s *Store) ResetCustomerLogin(ctx context.Context, id int64, nationalID, pa
 }
 
 // UpdateCustomer cập nhật thông tin (chỉ manager — enforce ở handler).
-func (s *Store) UpdateCustomer(ctx context.Context, id int64, fullName, phone, nationalID string) (Customer, error) {
+func (s *Store) UpdateCustomer(ctx context.Context, id int64, fullName, phone, nationalID string, gender, birthDate *string) (Customer, error) {
 	c, err := scanCustomer(s.pool.QueryRow(ctx, `
-		UPDATE customers SET full_name = $2, phone = $3, national_id = $4, updated_at = now()
+		UPDATE customers SET full_name = $2, phone = $3, national_id = $4, gender = $5, birth_date = $6::date, updated_at = now()
 		WHERE id = $1
-		RETURNING `+customerCols, id, fullName, phone, nationalID))
+		RETURNING `+customerCols, id, fullName, phone, nationalID, gender, birthDate))
 	return c, mapNotFound(err)
 }
 

@@ -28,11 +28,17 @@ func main() {
 	}
 	defer pool.Close()
 
+	app := server.New(cfg, pool)
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
-		Handler:           server.New(cfg, pool).Handler(),
+		Handler:           app.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	// Tự động mở bán xe 'sắp mở bán' đủ điều kiện vào 21:00 thứ Bảy hằng tuần.
+	schedCtx, schedCancel := context.WithCancel(ctx)
+	defer schedCancel()
+	go app.StartReleaseScheduler(schedCtx)
 
 	go func() {
 		log.Printf("API listening on %s (env=%s)", srv.Addr, cfg.AppEnv)

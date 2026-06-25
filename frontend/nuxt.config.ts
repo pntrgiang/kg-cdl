@@ -28,6 +28,10 @@ export default defineNuxtConfig({
     public: {
       // URL backend Go; override bằng NUXT_PUBLIC_API_BASE
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
+      // URL gốc của site (SEO: canonical, og:url, sitemap). Override bằng NUXT_PUBLIC_SITE_URL
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://kg-cdl.ddns.net',
+      // Mã xác minh Google Search Console (chỉ phần "content" của thẻ meta). Override bằng NUXT_PUBLIC_GOOGLE_VERIFICATION
+      googleVerification: process.env.NUXT_PUBLIC_GOOGLE_VERIFICATION || '',
       // Múi giờ hiển thị (IANA) — ghim cố định theo nghiệp vụ, độc lập trình duyệt/máy chủ
       timezone: process.env.NUXT_PUBLIC_TIMEZONE || 'Asia/Ho_Chi_Minh',
     },
@@ -35,7 +39,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'KG Car Dealer',
+      // title mặc định do titleTemplate trong app.vue đảm nhiệm (khi trang không tự đặt title)
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

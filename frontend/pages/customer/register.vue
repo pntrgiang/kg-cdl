@@ -77,6 +77,9 @@ async function submit() {
           <p v-if="lookingUp" class="mt-1 text-xs text-slate-400">Đang tra cứu…</p>
           <p v-else-if="lookupMsg" class="mt-1 text-xs" :class="lookupMsg.cls">{{ lookupMsg.text }}</p>
           <p v-else class="mt-1 text-xs text-slate-400">{{ NATIONAL_ID_HINT }}</p>
+          <p class="mt-1 text-xs text-slate-400">
+            💡 Cách lấy số căn cước: nhấn phím <kbd class="rounded border border-slate-300 bg-slate-100 px-1 font-mono text-[11px] text-slate-600">Esc</kbd> trong game, số căn cước sẽ hiển thị ở <strong>góc trên bên trái</strong> màn hình.
+          </p>
         </div>
         <div>
           <label class="label">Tài khoản đăng nhập</label>

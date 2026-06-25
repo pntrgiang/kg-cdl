@@ -9,7 +9,7 @@ import (
 // handleListVehicles trả về kho theo trạng thái. status=on_sale|upcoming (mặc định on_sale).
 // Công khai cho khách xem; đã tính sẵn giá sau giảm + % giảm.
 func (s *Server) handleListVehicles(w http.ResponseWriter, r *http.Request) {
-	_ = s.store.PromoteDueInventory(r.Context())
+	_, _ = s.store.PromoteDueInventory(r.Context(), false)
 	status := r.URL.Query().Get("status")
 	switch status {
 	case "", "on_sale":

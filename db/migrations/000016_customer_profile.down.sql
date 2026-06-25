@@ -1,0 +1,3 @@
+ALTER TABLE customers
+  DROP COLUMN IF EXISTS gender,
+  DROP COLUMN IF EXISTS birth_date;

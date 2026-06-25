@@ -33,8 +33,54 @@ const pickedCatalog = ref<any>(null)
 const stockForm = reactive({ base_price: 0, quantity: 1, trunk_kg: 10 })
 const msg = ref(''); const okMsg = ref('')
 
-// khi chọn mẫu xe có sẵn -> lấy cốp xe hiện tại để quản lý điều chỉnh lại
-watch(pickedCatalog, (c) => { if (c) stockForm.trunk_kg = c.trunk_kg ?? 10 })
+// ── Tự động mở bán: nút cập nhật ngay + nút tạm dừng trong ngày ──
+const promoting = ref(false)
+const pausing = ref(false)
+const releasePaused = ref(false)
+
+onMounted(async () => {
+  if (!canEdit.value) return
+  try { releasePaused.value = (await api.get<{ paused: boolean }>('/api/manage/release-status')).paused } catch {}
+})
+
+// Chạy ngay việc chuyển xe 'sắp mở bán' đủ điều kiện sang 'đang mở bán' (bất kể đang tạm dừng).
+// Dùng khi bổ sung xe mới sau mốc tự động (thứ Bảy 21:00).
+async function promoteRelease() {
+  msg.value = ''; okMsg.value = ''; promoting.value = true
+  try {
+    const r = await api.post<{ promoted: number }>('/api/manage/promote-release')
+    okMsg.value = r.promoted > 0
+      ? `Đã chuyển ${r.promoted} xe sang đang mở bán.`
+      : 'Không có xe nào đủ điều kiện để mở bán lúc này.'
+    await refresh()
+  } catch (e: any) { msg.value = e?.data?.error || 'Cập nhật mở bán thất bại.' }
+  finally { promoting.value = false }
+}
+
+// Tạm dừng / bật lại tự động mở bán (chỉ ảnh hưởng tiến trình tự động, hiệu lực trong hôm nay).
+async function togglePause(paused: boolean) {
+  msg.value = ''; okMsg.value = ''; pausing.value = true
+  try {
+    await api.post('/api/manage/release-pause', { paused })
+    releasePaused.value = paused
+    okMsg.value = paused
+      ? 'Đã tạm dừng tự động mở bán trong hôm nay.'
+      : 'Đã bật lại tự động mở bán.'
+  } catch (e: any) { msg.value = e?.data?.error || 'Thao tác thất bại.' }
+  finally { pausing.value = false }
+}
+
+// dòng kho đã tồn tại của mẫu xe đang chọn (nếu xe đã từng nhập kho & đã có giá bán)
+const existingInv = computed(() => (inventory.value || []).find((i: any) => i.catalog_id === pickedCatalog.value?.id) || null)
+const hasExistingPrice = computed(() => !!existingInv.value)
+
+// khi chọn mẫu xe có sẵn -> lấy cốp xe + giá bán hiện tại
+watch(pickedCatalog, (c) => {
+  if (!c) return
+  stockForm.trunk_kg = c.trunk_kg ?? 10
+  const inv = (inventory.value || []).find((i: any) => i.catalog_id === c.id)
+  stockForm.base_price = inv ? inv.base_price : 0 // đã có giá -> hiện lại (khoá); chưa có -> 0 để bắt buộc nhập
+})
 
 let t: any
 watch(catSearch, (q) => {
@@ -49,6 +95,9 @@ async function addStock() {
   msg.value = ''; okMsg.value = ''
   if (!pickedCatalog.value) { msg.value = 'Chọn một mẫu xe.'; return }
   if (!(stockForm.trunk_kg > 0)) { msg.value = 'Cần nhập cốp xe (kg) lớn hơn 0.'; return }
+  // giá bán: xe đã có giá -> dùng lại (không sửa ở đây); xe mới -> bắt buộc nhập > 0
+  const priceToUse = hasExistingPrice.value ? Number(existingInv.value.base_price) : Number(stockForm.base_price)
+  if (!hasExistingPrice.value && !(priceToUse > 0)) { msg.value = 'Vui lòng nhập giá bán cho xe (lớn hơn 0).'; return }
   if (!selectedWeekId.value) { msg.value = 'Chọn tuần mở bán (hoặc đăng ký tuần mới).'; return }
   try {
     // nếu quản lý điều chỉnh cốp xe -> cập nhật lại vào mẫu xe
@@ -66,7 +115,7 @@ async function addStock() {
     }
     await api.post('/api/inventory', {
       catalog_id: pickedCatalog.value.id,
-      base_price: Number(stockForm.base_price),
+      base_price: priceToUse,
       quantity: Number(stockForm.quantity),
       sales_week_id: selectedWeekId.value,
     })
@@ -113,6 +162,21 @@ async function applyDiscount(id: number, pct?: number) {
 async function setStatus(id: number, status: string) {
   try { await api.patch(`/api/inventory/${id}/status`, { status }); await refresh() }
   catch (e: any) { msg.value = e?.data?.error || 'Lỗi đổi trạng thái.' }
+}
+
+// ── sửa giá bán trong Danh sách kho ──
+const priceFor = ref<number | null>(null)
+const priceDraft = ref(0)
+function openPrice(i: any) { priceFor.value = i.id; priceDraft.value = i.base_price }
+async function savePrice(id: number) {
+  if (!(Number(priceDraft.value) > 0)) { msg.value = 'Giá bán phải lớn hơn 0.'; return }
+  msg.value = ''; okMsg.value = ''
+  try {
+    await api.patch(`/api/inventory/${id}/price`, { base_price: Number(priceDraft.value) })
+    priceFor.value = null
+    okMsg.value = 'Đã cập nhật giá bán.'
+    await refresh()
+  } catch (e: any) { msg.value = e?.data?.error || 'Lỗi cập nhật giá bán.' }
 }
 const statusLabels: Record<string, string> = { on_sale: 'Đang bán', upcoming: 'Sắp bán', hidden: 'Ẩn', sold_out: 'Hết hàng' }
 const statusClass: Record<string, string> = {
@@ -181,7 +245,17 @@ const statusClass: Record<string, string> = {
           <p v-if="pickedCatalog" class="mt-2 text-sm text-brand-700">Đã chọn: <strong>{{ pickedCatalog.name }}</strong></p>
         </div>
         <div class="space-y-2">
-          <div><label class="label">Giá bán gốc</label><input v-model="stockForm.base_price" type="number" class="input" /></div>
+          <div>
+            <label class="label">Giá bán <span class="text-red-500">*</span></label>
+            <template v-if="hasExistingPrice">
+              <input :value="formatMoney(existingInv.base_price)" class="input cursor-not-allowed bg-slate-100 text-slate-500" readonly disabled />
+              <p class="mt-1 text-xs text-amber-600">Xe này đã có giá bán. Để thay đổi giá, sửa tại <strong>“Danh sách kho”</strong> bên dưới.</p>
+            </template>
+            <template v-else>
+              <input v-model.number="stockForm.base_price" type="number" min="0" class="input" placeholder="Nhập giá bán" />
+              <p v-if="pickedCatalog" class="mt-1 text-xs text-slate-500">Xe chưa từng nhập kho — <strong>bắt buộc nhập giá bán</strong>.</p>
+            </template>
+          </div>
           <div><label class="label">Số lượng</label><input v-model="stockForm.quantity" type="number" class="input" /></div>
           <div>
             <label class="label">Cốp xe (kg) *</label>
@@ -215,14 +289,53 @@ const statusClass: Record<string, string> = {
       </div>
     </div>
 
+    <!-- ── Khu vực tự động mở bán (chỉ quản lý) ── -->
+    <div v-if="canEdit" class="card mb-6 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="font-semibold">🚀 Tự động mở bán</h2>
+          <p class="mt-0.5 text-xs text-slate-500">
+            Hệ thống tự chuyển xe “sắp mở bán” đủ điều kiện sang “đang mở bán” vào <strong>21:00 thứ Bảy</strong> hằng tuần.
+            <span v-if="releasePaused" class="font-medium text-amber-600">· Đang tạm dừng trong hôm nay.</span>
+            <span v-else class="font-medium text-green-600">· Đang hoạt động.</span>
+          </p>
+          <p class="mt-1 text-xs italic text-slate-400">
+            ⓘ Nút “Tạm dừng cập nhật mở bán” chỉ có hiệu lực <strong>trong hôm nay</strong> — sang ngày mới hệ thống tự động bật lại.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            class="btn-primary !py-1.5 text-sm" :disabled="promoting"
+            title="Chuyển ngay các xe sắp mở bán đã tới hạn sang đang mở bán (chạy được cả khi đang tạm dừng)"
+            @click="promoteRelease"
+          >
+            {{ promoting ? 'Đang cập nhật…' : '🚀 Cập nhật mở bán' }}
+          </button>
+          <button
+            v-if="!releasePaused" class="btn-ghost !py-1.5 text-sm" :disabled="pausing"
+            title="Tạm dừng việc tự động kiểm tra & mở bán, chỉ trong hôm nay"
+            @click="togglePause(true)"
+          >
+            {{ pausing ? 'Đang lưu…' : '⏸ Tạm dừng cập nhật mở bán' }}
+          </button>
+          <button
+            v-else class="btn-ghost !py-1.5 text-sm" :disabled="pausing"
+            @click="togglePause(false)"
+          >
+            {{ pausing ? 'Đang lưu…' : '▶ Bật lại tự động mở bán' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <h2 class="mb-2 font-semibold">Danh sách kho ({{ inventory?.length || 0 }})</h2>
     <div class="card overflow-x-auto">
-      <table class="w-full min-w-[760px] text-sm">
+      <table class="w-full min-w-[600px] text-sm">
         <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
           <tr>
             <th class="p-3">Xe</th>
             <th class="p-3">Giá bán</th>
-            <th class="p-3 w-72">Khuyến mãi</th>
+            <th class="p-3">Khuyến mãi</th>
             <th class="p-3">Tồn</th>
             <th class="p-3">Tổng đã nhập</th>
             <th class="p-3">Trạng thái</th>
@@ -232,19 +345,33 @@ const statusClass: Record<string, string> = {
           <tr v-for="i in inventory" :key="i.id" class="border-t align-top">
             <td class="p-3"><strong>{{ i.name }}</strong><div class="text-xs text-slate-400">{{ i.brand }} · {{ i.class }}</div></td>
 
-            <!-- Giá bán: gạch giá gốc + giá sau giảm -->
+            <!-- Giá bán: gạch giá gốc + giá sau giảm, kèm sửa giá (quản lý) -->
             <td class="p-3">
-              <template v-if="i.discount_percent > 0">
-                <div class="text-xs text-slate-400 line-through">{{ formatMoney(i.base_price) }}</div>
-                <div class="font-bold text-brand-800">{{ formatMoney(i.final_price) }}</div>
-              </template>
-              <div v-else class="font-semibold text-brand-800">{{ formatMoney(i.base_price) }}</div>
+              <!-- chế độ sửa -->
+              <div v-if="canEdit && priceFor === i.id" class="flex items-center gap-1.5">
+                <input v-model.number="priceDraft" type="number" min="0" class="w-28 rounded-md border px-2 py-1 text-xs" />
+                <button class="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700" @click="savePrice(i.id)">Lưu</button>
+                <button class="rounded-md px-2 py-1 text-xs text-slate-400 hover:text-slate-600" @click="priceFor = null">✕</button>
+              </div>
+              <!-- hiển thị -->
+              <div v-else class="flex items-center gap-1.5">
+                <div class="whitespace-nowrap">
+                  <template v-if="i.discount_percent > 0">
+                    <div class="text-xs text-slate-400 line-through">{{ formatMoney(i.base_price) }}</div>
+                    <div class="font-bold text-brand-800">{{ formatMoney(i.final_price) }}</div>
+                  </template>
+                  <div v-else class="font-semibold text-brand-800">{{ formatMoney(i.base_price) }}</div>
+                </div>
+                <button v-if="canEdit" class="shrink-0 text-slate-400 transition hover:text-brand-600" title="Sửa giá" @click="openPrice(i)">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                </button>
+              </div>
             </td>
 
             <!-- Khuyến mãi: badge gradient + tiết kiệm, hoặc trình chỉnh nhanh -->
             <td class="p-3">
               <!-- trình chỉnh (chỉ quản lý) -->
-              <div v-if="canEdit && discountFor === i.id" class="rounded-xl border border-gold-300 bg-gold-500/5 p-2.5">
+              <div v-if="canEdit && discountFor === i.id" class="min-w-[15rem] rounded-xl border border-gold-300 bg-gold-500/5 p-2.5">
                 <div class="mb-2 flex flex-wrap gap-1">
                   <button
                     v-for="p in quickPcts" :key="p"
@@ -271,8 +398,7 @@ const statusClass: Record<string, string> = {
                   </span>
                   <span class="text-xs text-green-600">Tiết kiệm {{ formatMoney(i.base_price - i.final_price) }}</span>
                 </template>
-                <span v-else class="text-xs text-slate-400">Không có</span>
-                <button v-if="canEdit" class="ml-auto rounded-md px-2 py-0.5 text-xs text-brand-600 ring-1 ring-brand-200 hover:bg-brand-50" @click="openDiscount(i)">
+                <button v-if="canEdit" class="shrink-0 rounded-md px-2 py-0.5 text-xs text-brand-600 ring-1 ring-brand-200 hover:bg-brand-50" @click="openDiscount(i)">
                   {{ i.discount_percent > 0 ? 'Sửa' : '+ Giảm giá' }}
                 </button>
               </div>

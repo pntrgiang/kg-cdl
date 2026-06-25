@@ -3,6 +3,11 @@ const api = useApi()
 const auth = useAuthStore()
 onMounted(() => auth.hydrate())
 const { data: events, pending } = await useAsyncData('events', () => api.get<any[]>('/api/events'))
+useSeo({
+  title: 'Sự kiện khuyến mãi',
+  description:
+    'Sự kiện khuyến mãi và quay số trúng thưởng tại Kanji Group — Lux City. Đăng ký tham gia để nhận voucher và phần thưởng hấp dẫn.',
+})
 const statusLabel: Record<string, { t: string; c: string }> = {
   open: { t: 'Đang nhận đăng ký', c: 'bg-green-100 text-green-700' },
   drawn: { t: 'Đang chờ kết quả', c: 'bg-amber-100 text-amber-700' },

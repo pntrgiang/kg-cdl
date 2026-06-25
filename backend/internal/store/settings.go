@@ -62,6 +62,35 @@ func (s *Store) ClearReleaseOverride(ctx context.Context) error {
 	return err
 }
 
+// ── Tạm dừng tự động mở bán (hiệu lực trong NGÀY hôm đó) ──
+// Lưu ngày (theo session TZ) vào settings.release_pause; chỉ có hiệu lực khi == hôm nay.
+
+// SetReleasePauseToday tạm dừng tự động mở bán cho hôm nay.
+func (s *Store) SetReleasePauseToday(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO settings (key, value, updated_at)
+		VALUES ('release_pause', to_jsonb(current_date::text), now())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`)
+	return err
+}
+
+// ClearReleasePause bật lại tự động mở bán (xoá mốc tạm dừng).
+func (s *Store) ClearReleasePause(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM settings WHERE key = 'release_pause'`)
+	return err
+}
+
+// IsReleasePausedToday: true nếu đang tạm dừng tự động mở bán cho đúng hôm nay.
+func (s *Store) IsReleasePausedToday(ctx context.Context) (bool, error) {
+	var paused bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM settings
+			WHERE key = 'release_pause' AND (value #>> '{}')::date = current_date
+		)`).Scan(&paused)
+	return paused, err
+}
+
 // ModalConfig: cấu hình popup thông báo mở bán (ảnh + đích chuyển hướng khi bấm ảnh).
 type ModalConfig struct {
 	Image  string `json:"image"`  // URL ảnh; rỗng = tắt popup

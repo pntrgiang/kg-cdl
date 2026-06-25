@@ -114,7 +114,7 @@ watch(() => route.fullPath, () => { navOpen.value = false })
     </div>
 
     <footer class="border-t bg-white py-6 text-center text-xs text-slate-400">
-      © Kanji Group — Car Dealer
+      © <a href="https://discord.com/channels/1513475540042911764" target="_blank" rel="noopener noreferrer" class="transition hover:text-brand-600 hover:underline">Kanji Group — Car Dealer</a>
     </footer>
   </div>
 </template>

@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /staff
+Disallow: /account
+Disallow: /login
+Disallow: /customer/
+
+Sitemap: https://kg-cdl.ddns.net/sitemap.xml

@@ -7,6 +7,55 @@ const { data: v, error } = await useAsyncData(`vehicle-${route.params.id}`, () =
 )
 const img = computed(() => v.value?.image_url || '')
 
+// ── SEO: meta động + dữ liệu có cấu trúc (JSON-LD Product) cho từng xe ──
+const site = (useRuntimeConfig().public.siteUrl as string) || 'https://kg-cdl.ddns.net'
+const absImg = computed(() => {
+  const u = v.value?.image_url || ''
+  if (!u) return `${site}/logo.png`
+  return u.startsWith('http') ? u : `${site}${u.startsWith('/') ? '' : '/'}${u}`
+})
+if (v.value) {
+  const d = v.value
+  const price = d.final_price ?? d.base_price ?? 0
+  useSeo({
+    title: d.name,
+    description:
+      (d.description && String(d.description).replace(/\s+/g, ' ').trim().slice(0, 160)) ||
+      `${d.name}${d.brand ? ' (' + d.brand + ')' : ''} — ${formatMoney(price)} tại đại lý Kanji Group, Lux City. Xem thông số, ưu đãi và đặt lịch xem xe.`,
+    image: d.image_url,
+  })
+  useHead({
+    script: [
+      {
+        type: 'application/ld+json',
+        innerHTML: JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'Product',
+          name: d.name,
+          image: absImg.value,
+          description:
+            (d.description && String(d.description).replace(/\s+/g, ' ').trim().slice(0, 300)) ||
+            `Xe ${d.name} tại đại lý Kanji Group, Lux City.`,
+          brand: { '@type': 'Brand', name: d.brand || 'Kanji Group' },
+          category: d.class || undefined,
+          offers: {
+            '@type': 'Offer',
+            priceCurrency: 'USD',
+            price: Math.round(price),
+            availability:
+              d.status === 'sold_out' || (typeof d.quantity === 'number' && d.quantity <= 0)
+                ? 'https://schema.org/OutOfStock'
+                : 'https://schema.org/InStock',
+            url: `${site}/vehicles/${route.params.id}`,
+          },
+        }),
+      },
+    ],
+  })
+} else {
+  useSeo({ title: 'Không tìm thấy xe', noindex: true })
+}
+
 // xe tương tự + lịch sử khuyến mãi
 const { data: similar } = await useAsyncData(`similar-${route.params.id}`, () =>
   api.get<any[]>(`/api/vehicles/${route.params.id}/similar`),

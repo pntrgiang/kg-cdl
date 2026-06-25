@@ -164,7 +164,7 @@ func (s *Server) handleCreateSalesWeek(w http.ResponseWriter, r *http.Request) {
 // ── inventory ────────────────────────────────────────────────────
 
 func (s *Server) handleListInventory(w http.ResponseWriter, r *http.Request) {
-	_ = s.store.PromoteDueInventory(r.Context())
+	_, _ = s.store.PromoteDueInventory(r.Context(), false)
 	status := r.URL.Query().Get("status")
 	items, err := s.store.ListInventory(r.Context(), status)
 	if err != nil {
@@ -280,6 +280,35 @@ func (s *Server) handleUpdateInventoryStatus(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, it)
 }
 
+type updatePriceReq struct {
+	BasePrice float64 `json:"base_price"`
+}
+
+// handleUpdateInventoryPrice (chỉ quản lý): sửa giá bán gốc của một dòng kho.
+func (s *Server) handleUpdateInventoryPrice(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlID(r)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "id không hợp lệ")
+		return
+	}
+	var req updatePriceReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.BasePrice <= 0 {
+		writeErr(w, http.StatusBadRequest, "giá bán phải lớn hơn 0")
+		return
+	}
+	if err := s.store.UpdateInventoryPrice(r.Context(), id, req.BasePrice); err != nil {
+		handleStoreErr(w, err)
+		return
+	}
+	actor, _ := identity(r)
+	_ = s.store.InsertLog(r.Context(), actor.SubjectID, s.actorName(r.Context(), actor), "inventory.price", "inventory", id, jsonObj("base_price", req.BasePrice))
+	it, _ := s.store.GetInventory(r.Context(), id)
+	writeJSON(w, http.StatusOK, it)
+}
+
 // ── customers ────────────────────────────────────────────────────
 
 func (s *Server) handleListCustomers(w http.ResponseWriter, r *http.Request) {
@@ -298,6 +327,31 @@ type createCustomerReq struct {
 	FullName   string `json:"full_name"`
 	Phone      string `json:"phone"`
 	NationalID string `json:"national_id"`
+	Gender     string `json:"gender"`
+	BirthDate  string `json:"birth_date"` // YYYY-MM-DD
+}
+
+// cleanGender chuẩn hoá giới tính về 'male'|'female'|'other', rỗng/không hợp lệ -> nil.
+func cleanGender(g string) *string {
+	g = strings.ToLower(strings.TrimSpace(g))
+	switch g {
+	case "male", "female", "other":
+		return &g
+	default:
+		return nil
+	}
+}
+
+// cleanBirthDate kiểm tra định dạng YYYY-MM-DD -> *string; rỗng -> nil (hợp lệ); sai định dạng -> ok=false.
+func cleanBirthDate(d string) (*string, bool) {
+	d = strings.TrimSpace(d)
+	if d == "" {
+		return nil, true
+	}
+	if _, err := time.Parse("2006-01-02", d); err != nil {
+		return nil, false
+	}
+	return &d, true
 }
 
 func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
@@ -314,8 +368,13 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "số căn cước phải có dạng LUX + 5 chữ số (vd LUX12345)")
 		return
 	}
+	birth, okB := cleanBirthDate(req.BirthDate)
+	if !okB {
+		writeErr(w, http.StatusBadRequest, "ngày sinh không hợp lệ (định dạng YYYY-MM-DD)")
+		return
+	}
 	actor, _ := identity(r)
-	c, err := s.store.CreateCustomerByStaff(r.Context(), req.FullName, req.Phone, req.NationalID, actor.SubjectID)
+	c, err := s.store.CreateCustomerByStaff(r.Context(), req.FullName, req.Phone, req.NationalID, cleanGender(req.Gender), birth, actor.SubjectID)
 	if err != nil {
 		writeErr(w, http.StatusConflict, "số căn cước đã tồn tại")
 		return
@@ -339,8 +398,13 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "số căn cước phải có dạng LUX + 5 chữ số (vd LUX12345)")
 		return
 	}
+	birth, okB := cleanBirthDate(req.BirthDate)
+	if !okB {
+		writeErr(w, http.StatusBadRequest, "ngày sinh không hợp lệ (định dạng YYYY-MM-DD)")
+		return
+	}
 	actor, _ := identity(r)
-	c, err := s.store.UpdateCustomer(r.Context(), id, req.FullName, req.Phone, req.NationalID)
+	c, err := s.store.UpdateCustomer(r.Context(), id, req.FullName, req.Phone, req.NationalID, cleanGender(req.Gender), birth)
 	if err != nil {
 		handleStoreErr(w, err)
 		return

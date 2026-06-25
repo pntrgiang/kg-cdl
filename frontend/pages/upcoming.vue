@@ -6,6 +6,12 @@ const { data: items, pending } = await useAsyncData('vehicles-upcoming', () =>
   api.get<any[]>('/api/vehicles?status=upcoming'),
 )
 
+useSeo({
+  title: 'Xe sắp mở bán',
+  description:
+    'Những mẫu xe sắp ra mắt tại Kanji Group — Lux City. Xem trước thông số và đếm ngược thời gian mở bán để không bỏ lỡ.',
+})
+
 // ── countdown mở bán xe mới ──
 const { data: release, refresh: refreshRelease } = await useAsyncData('release-info', () =>
   api.get<{ release_at: string; default_at: string; overridden: boolean; modal_image: string }>('/api/release-info'),

@@ -1,6 +1,9 @@
 package server
 
 import (
+	"context"
+	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -108,4 +111,83 @@ func (s *Server) handleSetReleaseOverride(w http.ResponseWriter, r *http.Request
 	}
 	_ = s.store.InsertLog(r.Context(), actor.SubjectID, s.actorName(r.Context(), actor), "release.override", "settings", 0, jsonObj("release_at", t.Format(time.RFC3339)))
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "release_at": t})
+}
+
+// handlePromoteRelease (chỉ quản lý): CHẠY NGAY việc chuyển các xe 'sắp mở bán' đủ điều kiện
+// sang 'đang mở bán'. Dùng cho trường hợp bổ sung xe mới sau mốc tự động (thứ Bảy 21:00).
+func (s *Server) handlePromoteRelease(w http.ResponseWriter, r *http.Request) {
+	n, err := s.store.PromoteDueInventory(r.Context(), true) // thủ công -> chạy bất kể đang tạm dừng
+	if err != nil {
+		handleStoreErr(w, err)
+		return
+	}
+	actor, _ := identity(r)
+	_ = s.store.InsertLog(r.Context(), actor.SubjectID, s.actorName(r.Context(), actor), "release.promote", "inventory", 0, jsonObj("promoted", fmt.Sprintf("%d", n)))
+	writeJSON(w, http.StatusOK, map[string]any{"promoted": n})
+}
+
+type pauseReleaseReq struct {
+	Paused bool `json:"paused"`
+}
+
+// handleSetReleasePause (chỉ quản lý): bật/tắt tạm dừng TỰ ĐỘNG mở bán cho hôm nay.
+// Tạm dừng chỉ ảnh hưởng tiến trình tự động (scheduler + lúc tải danh sách); nút "cập nhật mở bán" vẫn chạy được.
+func (s *Server) handleSetReleasePause(w http.ResponseWriter, r *http.Request) {
+	var req pauseReleaseReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	var err error
+	if req.Paused {
+		err = s.store.SetReleasePauseToday(r.Context())
+	} else {
+		err = s.store.ClearReleasePause(r.Context())
+	}
+	if err != nil {
+		handleStoreErr(w, err)
+		return
+	}
+	actor, _ := identity(r)
+	action := "release.resume"
+	if req.Paused {
+		action = "release.pause"
+	}
+	_ = s.store.InsertLog(r.Context(), actor.SubjectID, s.actorName(r.Context(), actor), action, "settings", 0, nil)
+	writeJSON(w, http.StatusOK, map[string]any{"paused": req.Paused})
+}
+
+// handleReleaseStatus (chỉ quản lý): trạng thái tự động mở bán (đang tạm dừng trong hôm nay?).
+func (s *Server) handleReleaseStatus(w http.ResponseWriter, r *http.Request) {
+	paused, err := s.store.IsReleasePausedToday(r.Context())
+	if err != nil {
+		handleStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"paused": paused})
+}
+
+// StartReleaseScheduler chạy nền: mỗi thứ Bảy 21:00 (giờ cấu hình) tự chuyển xe 'sắp mở bán'
+// đủ điều kiện sang 'đang mở bán'. Chạy 1 lần lúc khởi động để bù các mốc đã lỡ.
+func (s *Server) StartReleaseScheduler(ctx context.Context) {
+	loc := s.releaseLoc()
+	if n, err := s.store.PromoteDueInventory(ctx, false); err != nil {
+		log.Printf("release scheduler: lỗi chạy bù lúc khởi động: %v", err)
+	} else if n > 0 {
+		log.Printf("release scheduler: đã mở bán %d xe (chạy bù lúc khởi động)", n)
+	}
+	for {
+		next := nextSaturday21(time.Now(), loc)
+		timer := time.NewTimer(time.Until(next))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+			if n, err := s.store.PromoteDueInventory(ctx, false); err != nil {
+				log.Printf("release scheduler: lỗi mở bán tự động: %v", err)
+			} else {
+				log.Printf("release scheduler: đã mở bán %d xe lúc %s", n, time.Now().In(loc).Format(time.RFC3339))
+			}
+		}
+	}
 }

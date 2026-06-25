@@ -37,3 +37,9 @@ img/Gia_tien_xe.jpg
 
 # thư mục ảnh thiết kế mẫu
 img-new-design/
+
+# dữ liệu khách hàng thật (PII) - không đẩy lên repo
+data-user.txt
+
+# binary build dư
+backend/api

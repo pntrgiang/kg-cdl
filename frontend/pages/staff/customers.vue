@@ -11,9 +11,29 @@ let t: any
 watch(search, () => { clearTimeout(t); t = setTimeout(() => refresh(), 300) })
 
 const editing = ref<any>(null)
-const form = reactive({ full_name: '', phone: '', national_id: '' })
+const form = reactive({ full_name: '', phone: '', national_id: '', gender: '', birth_date: '' })
 const msg = ref('')
 const okMsg = ref('')
+
+// nhãn giới tính
+const genderLabel = (g: string | null) =>
+  g === 'male' ? 'Nam' : g === 'female' ? 'Nữ' : g === 'other' ? 'Khác' : '—'
+
+// dropdown thao tác (mở qua Teleport để không bị cắt bởi overflow của bảng)
+const menuCustomer = ref<any>(null)
+const menuPos = reactive({ top: 0, left: 0 })
+function toggleMenu(c: any, ev: MouseEvent) {
+  if (menuCustomer.value?.id === c.id) { menuCustomer.value = null; return }
+  const r = (ev.currentTarget as HTMLElement).getBoundingClientRect()
+  menuPos.top = r.bottom + 4
+  menuPos.left = Math.max(8, r.right - 176) // 176px = w-44
+  menuCustomer.value = c
+}
+function runAction(fn: (c: any) => void) {
+  const c = menuCustomer.value
+  menuCustomer.value = null
+  if (c) fn(c)
+}
 
 // giới hạn số lượng theo hạng — nhân viên/quản lý xem, chỉ dev sửa
 const { data: limits, refresh: refreshLimits } = await useAsyncData('rank-limits', () => api.get<any>('/api/settings/rank-limits'))
@@ -31,6 +51,7 @@ async function saveLimits() {
 function startEdit(c: any) {
   editing.value = c
   form.full_name = c.full_name; form.phone = c.phone; form.national_id = c.national_id
+  form.gender = c.gender || ''; form.birth_date = c.birth_date || ''
 }
 async function save() {
   msg.value = ''
@@ -124,7 +145,7 @@ async function removeCustomer(c: any) {
     <div class="card overflow-x-auto">
       <table class="w-full min-w-[640px] text-sm">
         <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
-          <tr><th class="p-3">Họ tên</th><th class="p-3">SĐT</th><th class="p-3">Căn cước</th><th class="p-3">Hạng</th><th class="p-3">Đã mua</th><th class="p-3"></th></tr>
+          <tr><th class="p-3">Họ tên</th><th class="p-3">SĐT</th><th class="p-3">Căn cước</th><th class="p-3">Giới tính</th><th class="p-3">Ngày sinh</th><th class="p-3">Hạng</th><th class="p-3">Đã mua</th><th class="p-3"></th></tr>
         </thead>
         <tbody>
           <tr v-for="c in customers" :key="c.id" class="border-t" :class="c.is_active === false ? 'opacity-50' : ''">
@@ -134,21 +155,38 @@ async function removeCustomer(c: any) {
             </td>
             <td class="p-3">{{ c.phone || '—' }}</td>
             <td class="p-3">{{ c.national_id }}</td>
+            <td class="p-3">{{ genderLabel(c.gender) }}</td>
+            <td class="whitespace-nowrap p-3">{{ c.birth_date || '—' }}</td>
             <td class="p-3"><RankBadge :rank="c.rank" /></td>
             <td class="p-3 font-medium text-brand-800">{{ formatMoney(c.total_spent) }}</td>
             <td class="p-3 text-right">
-              <div class="flex items-center justify-end gap-3">
-                <button class="text-xs text-brand-600 hover:underline" @click="openSales(c)">Xe đã mua</button>
-                <button v-if="auth.isManager" class="text-xs text-brand-600 hover:underline" @click="startEdit(c)">Sửa</button>
-                <button v-if="auth.isDev" class="text-xs text-amber-600 hover:underline" @click="resetPassword(c)">Reset MK</button>
-                <button v-if="auth.isDev" class="text-xs text-red-600 hover:underline" @click="removeCustomer(c)">Xoá</button>
-              </div>
+              <button
+                class="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                @click="toggleMenu(c, $event)"
+              >
+                Thao tác <span class="text-[10px]">▾</span>
+              </button>
             </td>
           </tr>
-          <tr v-if="!customers?.length"><td colspan="6" class="p-8 text-center text-slate-400">Chưa có khách hàng.</td></tr>
+          <tr v-if="!customers?.length"><td colspan="8" class="p-8 text-center text-slate-400">Chưa có khách hàng.</td></tr>
         </tbody>
       </table>
     </div>
+
+    <!-- dropdown thao tác (Teleport ra body để không bị cắt bởi overflow của bảng) -->
+    <Teleport to="body">
+      <div v-if="menuCustomer" class="fixed inset-0 z-40" @click="menuCustomer = null" />
+      <div
+        v-if="menuCustomer"
+        class="fixed z-50 w-44 overflow-hidden rounded-lg border bg-white py-1 shadow-xl"
+        :style="{ top: menuPos.top + 'px', left: menuPos.left + 'px' }"
+      >
+        <button class="block w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-brand-50" @click="runAction(openSales)">🚗 Xe đã mua</button>
+        <button v-if="auth.isManager" class="block w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-brand-50" @click="runAction(startEdit)">✏️ Sửa thông tin</button>
+        <button v-if="auth.isDev" class="block w-full px-3 py-1.5 text-left text-xs text-amber-600 hover:bg-amber-50" @click="runAction(resetPassword)">🔑 Reset mật khẩu</button>
+        <button v-if="auth.isDev" class="block w-full border-t px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50" @click="runAction(removeCustomer)">🗑 Xoá khách</button>
+      </div>
+    </Teleport>
 
     <!-- modal lịch sử xe đã mua -->
     <div v-if="salesFor" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="salesFor = null">
@@ -202,6 +240,21 @@ async function removeCustomer(c: any) {
         <div class="space-y-3">
           <div><label class="label">Họ tên</label><input v-model="form.full_name" class="input" /></div>
           <div><label class="label">Số điện thoại</label><input v-model="form.phone" class="input" /></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="label">Giới tính</label>
+              <select v-model="form.gender" class="input">
+                <option value="">— Chưa rõ —</option>
+                <option value="male">Nam</option>
+                <option value="female">Nữ</option>
+                <option value="other">Khác</option>
+              </select>
+            </div>
+            <div>
+              <label class="label">Ngày sinh</label>
+              <input v-model="form.birth_date" type="date" class="input" />
+            </div>
+          </div>
           <div>
             <label class="label">Số căn cước</label>
             <input v-model="form.national_id" class="input uppercase placeholder:normal-case" placeholder="LUX12345" @input="form.national_id = form.national_id.toUpperCase()" />

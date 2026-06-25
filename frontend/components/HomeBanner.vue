@@ -24,7 +24,10 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       <TransitionGroup name="bfade">
         <img
           v-for="(b, i) in list" v-show="i === idx" :key="b.id"
-          :src="b.image_url" alt="Banner"
+          :src="b.image_url" alt="Khuyến mãi xe Kanji Group — Lux City"
+          :loading="i === 0 ? 'eager' : 'lazy'"
+          :fetchpriority="i === 0 ? 'high' : 'auto'"
+          decoding="async"
           class="absolute inset-0 h-full w-full object-cover"
         />
       </TransitionGroup>

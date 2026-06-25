@@ -69,12 +69,32 @@ func (s *Store) CreateSalesWeek(ctx context.Context, dateStr string, createdBy i
 	return w, err
 }
 
-// PromoteDueInventory chuyển xe 'upcoming' sang 'on_sale' khi tuần mở bán đã bắt đầu.
-func (s *Store) PromoteDueInventory(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, `
+// PromoteDueInventory chuyển xe 'upcoming' -> 'on_sale' khi ĐÃ tới mốc mở bán & còn hàng.
+//   - Nhập theo tuần (sales_week_id): mở bán lúc 21:00 (9h tối) thứ Bảy đầu tuần — giờ theo session TZ
+//     (Asia/Ho_Chi_Minh), khớp đồng hồ đếm ngược khách thấy.
+//   - Nhập thủ công có mốc on_sale_at: mở bán khi tới mốc đó.
+// Trả về số xe vừa được chuyển sang đang mở bán.
+// force=false (tự động): TÔN TRỌNG tạm dừng trong ngày -> bỏ qua nếu đang tạm dừng.
+// force=true (bấm "cập nhật mở bán" thủ công): chạy bất kể đang tạm dừng hay không.
+func (s *Store) PromoteDueInventory(ctx context.Context, force bool) (int64, error) {
+	if !force {
+		if paused, err := s.IsReleasePausedToday(ctx); err == nil && paused {
+			return 0, nil
+		}
+	}
+	ct, err := s.pool.Exec(ctx, `
 		UPDATE inventory i SET status = 'on_sale', updated_at = now()
-		FROM sales_weeks w
-		WHERE i.sales_week_id = w.id AND i.status = 'upcoming'
-		  AND w.week_start <= current_date AND i.quantity > 0`)
-	return err
+		WHERE i.status = 'upcoming' AND i.quantity > 0
+		  AND (
+		    EXISTS (
+		      SELECT 1 FROM sales_weeks w
+		      WHERE w.id = i.sales_week_id
+		        AND (w.week_start + interval '21 hours') <= now()
+		    )
+		    OR (i.sales_week_id IS NULL AND i.on_sale_at IS NOT NULL AND i.on_sale_at <= now())
+		  )`)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
 }

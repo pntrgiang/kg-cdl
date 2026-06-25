@@ -12,6 +12,27 @@ async function doLogout() {
 const navOpen = ref(false)
 const route = useRoute()
 watch(() => route.fullPath, () => { navOpen.value = false })
+
+// Dữ liệu có cấu trúc về doanh nghiệp (hiển thị cho mọi trang khách) -> hỗ trợ Google hiểu thương hiệu.
+const site = (useRuntimeConfig().public.siteUrl as string) || 'https://kg-cdl.ddns.net'
+useHead({
+  script: [
+    {
+      type: 'application/ld+json',
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'AutoDealer',
+        name: 'Kanji Group — Car Dealer',
+        url: site,
+        logo: `${site}/logo.png`,
+        image: `${site}/logo.png`,
+        areaServed: 'Lux City',
+        description:
+          'Đại lý xe Kanji Group tại thành phố Lux City — mua bán xe, ưu đãi và sự kiện trúng thưởng cho khách hàng.',
+      }),
+    },
+  ],
+})
 </script>
 
 <template>
@@ -117,10 +138,21 @@ watch(() => route.fullPath, () => { navOpen.value = false })
     </main>
 
     <footer class="border-t bg-white py-6 text-center text-xs text-slate-400">
-      © Kanji Group — Car Dealer
+      © <a href="https://discord.com/channels/1513475540042911764" target="_blank" rel="noopener noreferrer" class="transition hover:text-brand-600 hover:underline">Kanji Group — Car Dealer</a>
     </footer>
 
     <!-- modal thông báo sắp mở bán xe (hiện mỗi lần tải trang ở giao diện khách) -->
     <ReleaseCountdownModal />
+
+    <!-- bộ lọc "lửa": nhiễu fractal động làm méo viền gradient -> lưỡi lửa uốn lượn (dùng cho card sắp hết hàng) -->
+    <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none;">
+      <filter id="vc-flame" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.016 0.045" numOctaves="3" seed="7" result="noise">
+          <animate attributeName="baseFrequency" dur="7s" values="0.016 0.045;0.022 0.07;0.018 0.05;0.016 0.045" repeatCount="indefinite" />
+          <animate attributeName="seed" dur="5s" values="7;10;13;7" repeatCount="indefinite" />
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="20" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </svg>
   </div>
 </template>

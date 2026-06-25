@@ -132,6 +132,18 @@ func (s *Store) UpdateInventoryStatus(ctx context.Context, id int64, status stri
 	return nil
 }
 
+// UpdateInventoryPrice đổi giá bán gốc (base_price) của một dòng kho.
+func (s *Store) UpdateInventoryPrice(ctx context.Context, id int64, basePrice float64) error {
+	ct, err := s.pool.Exec(ctx, `UPDATE inventory SET base_price = $2, updated_at = now() WHERE id = $1`, id, basePrice)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func round2(f float64) float64 {
 	return float64(int64(f*100+0.5)) / 100
 }

@@ -21,6 +21,8 @@ type Customer struct {
 	FullName      string     `json:"full_name"`
 	Phone         string     `json:"phone"`
 	NationalID    string     `json:"national_id"`
+	Gender        *string    `json:"gender"`     // 'male' | 'female' | 'other' | null
+	BirthDate     *string    `json:"birth_date"` // 'YYYY-MM-DD' | null
 	Rank          string     `json:"rank"`
 	TotalSpent    float64    `json:"total_spent"`
 	LastPurchase  *time.Time `json:"last_purchase_at"`

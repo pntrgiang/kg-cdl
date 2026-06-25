@@ -7,13 +7,13 @@ import (
 )
 
 const customerCols = `id, username, full_name, phone, national_id, gender,
-	to_char(birth_date,'YYYY-MM-DD') AS birth_date, rank, total_spent,
+	to_char(birth_date,'YYYY-MM-DD') AS birth_date, exclude_from_rank, rank, total_spent,
 	last_purchase_at, claimed_at, is_active, created_at`
 
 func scanCustomer(row pgx.Row) (Customer, error) {
 	var c Customer
 	err := row.Scan(&c.ID, &c.Username, &c.FullName, &c.Phone, &c.NationalID, &c.Gender, &c.BirthDate,
-		&c.Rank, &c.TotalSpent, &c.LastPurchase, &c.ClaimedAt, &c.IsActive, &c.CreatedAt)
+		&c.ExcludeFromRank, &c.Rank, &c.TotalSpent, &c.LastPurchase, &c.ClaimedAt, &c.IsActive, &c.CreatedAt)
 	return c, err
 }
 
@@ -32,6 +32,21 @@ func (s *Store) GetCustomerByNationalID(ctx context.Context, nationalID string) 
 	return c, mapNotFound(err)
 }
 
+// GetCustomerAuthByNationalID trả id + password_hash của khách theo số căn cước
+// (hash rỗng nếu khách chưa có tài khoản). Dùng khi thăng cấp khách thành nhân viên.
+func (s *Store) GetCustomerAuthByNationalID(ctx context.Context, nationalID string) (int64, string, error) {
+	var id int64
+	var hash *string
+	err := s.pool.QueryRow(ctx, `SELECT id, password_hash FROM customers WHERE national_id = $1`, nationalID).Scan(&id, &hash)
+	if err != nil {
+		return 0, "", mapNotFound(err)
+	}
+	if hash == nil {
+		return id, "", nil
+	}
+	return id, *hash, nil
+}
+
 func (s *Store) GetCustomerByID(ctx context.Context, id int64) (Customer, error) {
 	c, err := scanCustomer(s.pool.QueryRow(ctx,
 		`SELECT `+customerCols+` FROM customers WHERE id = $1`, id))
@@ -44,7 +59,8 @@ func (s *Store) GetCustomerByUsername(ctx context.Context, username string) (Cus
 	var hash *string
 	err := s.pool.QueryRow(ctx, `
 		SELECT `+customerCols+`, password_hash FROM customers WHERE username = $1`, username,
-	).Scan(&c.ID, &c.Username, &c.FullName, &c.Phone, &c.NationalID, &c.Gender, &c.BirthDate, &c.Rank, &c.TotalSpent,
+	).Scan(&c.ID, &c.Username, &c.FullName, &c.Phone, &c.NationalID, &c.Gender, &c.BirthDate,
+		&c.ExcludeFromRank, &c.Rank, &c.TotalSpent,
 		&c.LastPurchase, &c.ClaimedAt, &c.IsActive, &c.CreatedAt, &hash)
 	h := ""
 	if hash != nil {

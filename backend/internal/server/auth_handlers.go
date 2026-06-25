@@ -44,23 +44,41 @@ type loginReq struct {
 	Password string `json:"password"`
 }
 
-func (s *Server) handleStaffLogin(w http.ResponseWriter, r *http.Request) {
+// handleLogin: ĐĂNG NHẬP GỘP cho cả nhân viên và khách hàng (một trang duy nhất).
+// Thử tài khoản nhân viên (bảng users) trước; nếu không khớp thì thử khách hàng (bảng customers).
+// Nhờ vậy khách được thăng cấp lên nhân viên vẫn đăng nhập bằng đúng tài khoản/mật khẩu cũ.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginReq
 	if !readJSON(w, r, &req) {
 		return
 	}
-	u, hash, err := s.store.GetUserByUsername(r.Context(), strings.TrimSpace(req.Username))
-	if err != nil || !u.IsActive || !auth.CheckPassword(hash, req.Password) {
-		writeErr(w, http.StatusUnauthorized, "sai tài khoản hoặc mật khẩu")
+	uname := strings.TrimSpace(req.Username)
+
+	// 1) nhân viên (users)
+	if u, hash, err := s.store.GetUserByUsername(r.Context(), uname); err == nil && u.IsActive && auth.CheckPassword(hash, req.Password) {
+		id := auth.Identity{SubjectType: auth.SubjectUser, SubjectID: u.ID, Role: u.Role}
+		tp, err := s.issueTokens(r.Context(), r, id)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"token": tp, "type": "user", "user": u})
 		return
 	}
-	id := auth.Identity{SubjectType: auth.SubjectUser, SubjectID: u.ID, Role: u.Role}
-	tp, err := s.issueTokens(r.Context(), r, id)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
+
+	// 2) khách hàng (customers)
+	if c, hash, err := s.store.GetCustomerByUsername(r.Context(), uname); err == nil && hash != "" && auth.CheckPassword(hash, req.Password) {
+		id := auth.Identity{SubjectType: auth.SubjectCustomer, SubjectID: c.ID}
+		tp, err := s.issueTokens(r.Context(), r, id)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"token": tp, "type": "customer", "customer": c})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"token": tp, "user": u})
+
+	writeErr(w, http.StatusUnauthorized, "sai tài khoản hoặc mật khẩu")
 }
 
 func (s *Server) handleCustomerLogin(w http.ResponseWriter, r *http.Request) {

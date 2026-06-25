@@ -2,8 +2,44 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
+
+// SubjectAuthState: trạng thái xác thực của chủ thể (cho mỗi request).
+// exists=false nếu đã bị xoá; active=false nếu bị khoá/ngưng; validAfter = mốc vô hiệu phiên (nil = không).
+func (s *Store) SubjectAuthState(ctx context.Context, subjectType string, subjectID int64) (exists, active bool, validAfter *time.Time, err error) {
+	table := "users"
+	if subjectType == "customer" {
+		table = "customers"
+	}
+	err = s.pool.QueryRow(ctx, `SELECT is_active, tokens_valid_after FROM `+table+` WHERE id = $1`, subjectID).Scan(&active, &validAfter)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, false, nil, nil
+		}
+		return false, false, nil, err
+	}
+	return true, active, validAfter, nil
+}
+
+// InvalidateSessions vô hiệu MỌI phiên hiện tại của chủ thể: đặt mốc tokens_valid_after = now()
+// (chặn ngay access token cũ ở requireExistingSubject) và thu hồi toàn bộ refresh token.
+func (s *Store) InvalidateSessions(ctx context.Context, subjectType string, subjectID int64) error {
+	table := "users"
+	if subjectType == "customer" {
+		table = "customers"
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE `+table+` SET tokens_valid_after = now() WHERE id = $1`, subjectID); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `
+		UPDATE refresh_tokens SET revoked_at = now()
+		WHERE subject_type = $1 AND subject_id = $2 AND revoked_at IS NULL`, subjectType, subjectID)
+	return err
+}
 
 // SaveRefreshToken lưu hash của refresh token.
 func (s *Store) SaveRefreshToken(ctx context.Context, subjectType string, subjectID int64, tokenHash string, expiresAt time.Time, userAgent, ip string) error {

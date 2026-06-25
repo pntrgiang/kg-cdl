@@ -456,6 +456,8 @@ func (s *Server) handleDeleteCustomer(w http.ResponseWriter, r *http.Request) {
 		handleStoreErr(w, err)
 		return
 	}
+	// xoá/ngưng khách -> vô hiệu mọi phiên hiện tại của họ (đăng xuất ngay)
+	_ = s.store.InvalidateSessions(r.Context(), auth.SubjectCustomer, id)
 	action := "customer.delete"
 	if !hard {
 		action = "customer.deactivate"
@@ -552,6 +554,41 @@ func (s *Server) handleRefundSale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "refunded"})
+}
+
+type transferSaleReq struct {
+	CustomerID int64 `json:"customer_id"`
+}
+
+// handleTransferSale (quản lý): chuyển 1 giao dịch của tài khoản tạm (vd LUX00000) sang khách thật.
+func (s *Server) handleTransferSale(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlID(r)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "id không hợp lệ")
+		return
+	}
+	var req transferSaleReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.CustomerID <= 0 {
+		writeErr(w, http.StatusBadRequest, "cần chọn khách hàng nhận")
+		return
+	}
+	actor, _ := identity(r)
+	limits, _ := s.store.GetRankLimits(r.Context())
+	if err := s.store.TransferSale(r.Context(), id, req.CustomerID, actor.SubjectID, s.actorName(r.Context(), actor), limits.SVIP, limits.VIP); err != nil {
+		switch err {
+		case store.ErrNotTransferable:
+			writeErr(w, http.StatusBadRequest, "chỉ chuyển được giao dịch CHƯA hoàn của tài khoản tạm")
+		case store.ErrInvalidTransferTarget:
+			writeErr(w, http.StatusBadRequest, "khách hàng nhận không hợp lệ (không tồn tại, đã ngưng, hoặc cũng là tài khoản tạm)")
+		default:
+			handleStoreErr(w, err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "transferred"})
 }
 
 // ── báo cáo doanh thu ────────────────────────────────────────────

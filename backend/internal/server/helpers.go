@@ -32,17 +32,16 @@ func (s *Server) requireExistingSubject(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if id.SubjectType == auth.SubjectUser {
-			u, err := s.store.GetUserByID(r.Context(), id.SubjectID)
-			if err != nil || !u.IsActive {
-				writeErr(w, http.StatusUnauthorized, "tài khoản không tồn tại hoặc đã bị khoá")
-				return
-			}
-		} else {
-			if _, err := s.store.GetCustomerByID(r.Context(), id.SubjectID); err != nil {
-				writeErr(w, http.StatusUnauthorized, "tài khoản không tồn tại, vui lòng đăng nhập lại")
-				return
-			}
+		exists, active, validAfter, err := s.store.SubjectAuthState(r.Context(), id.SubjectType, id.SubjectID)
+		if err != nil || !exists || !active {
+			// chủ thể đã bị xoá hoặc khoá/ngưng -> đăng xuất ngay
+			writeErr(w, http.StatusUnauthorized, "tài khoản không tồn tại hoặc đã bị khoá, vui lòng đăng nhập lại")
+			return
+		}
+		if validAfter != nil && id.IssuedAt.Before(*validAfter) {
+			// phiên đã bị vô hiệu (vd: bị thăng cấp/đổi quyền/ngưng) -> buộc đăng nhập lại
+			writeErr(w, http.StatusUnauthorized, "phiên đăng nhập đã hết hiệu lực, vui lòng đăng nhập lại")
+			return
 		}
 		next.ServeHTTP(w, r)
 	})

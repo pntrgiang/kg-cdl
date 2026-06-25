@@ -306,6 +306,91 @@ func (s *Store) RecomputeRanks(ctx context.Context, svipLimit, vipLimit int) err
 // ErrAlreadyRefunded khi giao dịch đã hoàn trước đó.
 var ErrAlreadyRefunded = fmt.Errorf("sale already refunded")
 
+// Lỗi khi chuyển giao dịch (chỉ áp dụng cho tài khoản tạm).
+var ErrNotTransferable = fmt.Errorf("sale not transferable")     // nguồn không phải tài khoản tạm / đã hoàn
+var ErrInvalidTransferTarget = fmt.Errorf("invalid transfer target") // đích không hợp lệ
+
+// TransferSale chuyển 1 giao dịch CHƯA hoàn từ TÀI KHOẢN TẠM (exclude_from_rank) sang khách thật:
+// dời customer_id, dịch chuyển total_spent (trừ nguồn, cộng đích), cập nhật last_purchase, xếp lại hạng.
+func (s *Store) TransferSale(ctx context.Context, saleID, toCustomerID, actorID int64, actorName string, svipLimit, vipLimit int) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, rankLockKey); err != nil {
+		return err
+	}
+
+	var fromCustomerID int64
+	var finalPrice float64
+	var vehicleName string
+	var refunded *time.Time
+	var saleCreatedAt time.Time
+	err = tx.QueryRow(ctx, `
+		SELECT customer_id, final_price, vehicle_name, refunded_at, created_at
+		FROM sales WHERE id = $1 FOR UPDATE`, saleID,
+	).Scan(&fromCustomerID, &finalPrice, &vehicleName, &refunded, &saleCreatedAt)
+	if err != nil {
+		return mapNotFound(err)
+	}
+	if refunded != nil {
+		return ErrNotTransferable // giao dịch đã hoàn -> không chuyển
+	}
+	if toCustomerID == fromCustomerID {
+		return ErrInvalidTransferTarget
+	}
+
+	// nguồn PHẢI là tài khoản tạm (exclude_from_rank) — tạm thời chỉ áp dụng cho loại này (vd LUX00000)
+	var fromExcluded bool
+	if err := tx.QueryRow(ctx, `SELECT exclude_from_rank FROM customers WHERE id = $1`, fromCustomerID).Scan(&fromExcluded); err != nil {
+		return mapNotFound(err)
+	}
+	if !fromExcluded {
+		return ErrNotTransferable
+	}
+
+	// đích phải tồn tại, đang hoạt động, KHÔNG phải tài khoản tạm
+	var toActive, toExcluded bool
+	if err := tx.QueryRow(ctx, `SELECT is_active, exclude_from_rank FROM customers WHERE id = $1`, toCustomerID).Scan(&toActive, &toExcluded); err != nil {
+		return ErrInvalidTransferTarget
+	}
+	if !toActive || toExcluded {
+		return ErrInvalidTransferTarget
+	}
+
+	// dời giao dịch sang khách thật
+	if _, err := tx.Exec(ctx, `UPDATE sales SET customer_id = $2 WHERE id = $1`, saleID, toCustomerID); err != nil {
+		return err
+	}
+	// trừ chi tiêu của tài khoản tạm
+	if _, err := tx.Exec(ctx, `UPDATE customers SET total_spent = greatest(total_spent - $2, 0), updated_at = now() WHERE id = $1`, fromCustomerID, finalPrice); err != nil {
+		return err
+	}
+	// cộng chi tiêu cho khách thật + cập nhật mốc mua gần nhất
+	if _, err := tx.Exec(ctx, `
+		UPDATE customers
+		SET total_spent = total_spent + $2,
+		    last_purchase_at = greatest(coalesce(last_purchase_at, $3), $3),
+		    updated_at = now()
+		WHERE id = $1`, toCustomerID, finalPrice, saleCreatedAt); err != nil {
+		return err
+	}
+	// xếp lại hạng toàn bộ khách
+	if _, err := recomputeRanksTx(ctx, tx, svipLimit, vipLimit); err != nil {
+		return err
+	}
+	// log
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO activity_logs (actor_id, actor_name, action, target_type, target_id, detail)
+		VALUES ($1,$2,'sale.transfer','sale',$3, jsonb_build_object('vehicle',$4::text,'amount',$5::numeric,'from',$6::bigint,'to',$7::bigint))`,
+		actorID, actorName, saleID, vehicleName, finalPrice, fromCustomerID, toCustomerID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // rankLockKey: khóa advisory dùng chung để serialize mọi thao tác xếp lại hạng khách.
 const rankLockKey int64 = 91713
 
@@ -389,9 +474,16 @@ func (s *Store) RefundSale(ctx context.Context, saleID, refundedBy int64, actorN
 // recomputeRanksTx xếp lại rank toàn bộ khách theo total_spent.
 // Trả về map customerID -> rank mới. Ghi customer_rank_history khi có thay đổi.
 func recomputeRanksTx(ctx context.Context, tx pgx.Tx, svipLimit, vipLimit int) (map[int64]string, error) {
+	// Đưa về 'regular' những khách KHÔNG xếp hạng: tài khoản tạm (exclude_from_rank)
+	// hoặc không còn chi tiêu (total_spent <= 0, vd sau khi hoàn trả) — tránh giữ hạng cũ.
+	if _, err := tx.Exec(ctx, `
+		UPDATE customers SET rank = 'regular', updated_at = now()
+		WHERE rank <> 'regular' AND (exclude_from_rank OR total_spent <= 0)`); err != nil {
+		return nil, err
+	}
 	rows, err := tx.Query(ctx, `
 		SELECT id, rank FROM customers
-		WHERE is_active AND total_spent > 0
+		WHERE is_active AND total_spent > 0 AND NOT exclude_from_rank
 		ORDER BY total_spent DESC, last_purchase_at ASC NULLS LAST, id ASC`)
 	if err != nil {
 		return nil, err

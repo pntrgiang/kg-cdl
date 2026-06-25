@@ -23,6 +23,7 @@ type Customer struct {
 	NationalID    string     `json:"national_id"`
 	Gender        *string    `json:"gender"`     // 'male' | 'female' | 'other' | null
 	BirthDate     *string    `json:"birth_date"` // 'YYYY-MM-DD' | null
+	ExcludeFromRank bool     `json:"exclude_from_rank"` // tài khoản tạm -> không xếp hạng
 	Rank          string     `json:"rank"`
 	TotalSpent    float64    `json:"total_spent"`
 	LastPurchase  *time.Time `json:"last_purchase_at"`

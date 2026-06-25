@@ -34,27 +34,53 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
-	if req.Username == "" || len(req.Password) < 6 || strings.TrimSpace(req.DisplayName) == "" {
-		writeErr(w, http.StatusBadRequest, "cần username, mật khẩu (>=6) và tên hiển thị")
+	if req.Username == "" || strings.TrimSpace(req.DisplayName) == "" {
+		writeErr(w, http.StatusBadRequest, "cần username và tên hiển thị")
 		return
 	}
 	if !validRole(req.Role) {
 		writeErr(w, http.StatusBadRequest, "role không hợp lệ")
 		return
 	}
-	hash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal error")
-		return
-	}
+	nidStr := strings.TrimSpace(req.NationalID)
 	var nid *string
-	if v := strings.TrimSpace(req.NationalID); v != "" {
-		nid = &v
+	if nidStr != "" {
+		nid = &nidStr
 	}
+
+	// Nguồn mật khẩu cho tài khoản nhân viên:
+	//  - Nhập mật khẩu mới (>=6) -> dùng mật khẩu đó.
+	//  - Để TRỐNG + có số căn cước trùng KHÁCH ĐÃ CÓ TÀI KHOẢN -> DÙNG LẠI mật khẩu của khách,
+	//    để khách thăng cấp đăng nhập bằng đúng tài khoản/mật khẩu đã đăng ký.
+	var hash string
+	var promotedCustomerID int64 // != 0 nếu đây là thăng cấp từ khách đã có tài khoản
+	if req.Password == "" && nidStr != "" {
+		if cid, ch, err := s.store.GetCustomerAuthByNationalID(r.Context(), nidStr); err == nil && ch != "" {
+			hash = ch
+			promotedCustomerID = cid
+		}
+	}
+	if hash == "" {
+		if len(req.Password) < 6 {
+			writeErr(w, http.StatusBadRequest, "cần mật khẩu (>=6); hoặc chọn khách đã có tài khoản và để trống mật khẩu để dùng lại mật khẩu của khách")
+			return
+		}
+		h, err := auth.HashPassword(req.Password)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		hash = h
+	}
+
 	u, err := s.store.CreateUser(r.Context(), req.Username, hash, req.DisplayName, req.Role, nid)
 	if err != nil {
 		writeErr(w, http.StatusConflict, "username hoặc số căn cước đã tồn tại")
 		return
+	}
+	// thăng cấp: vô hiệu phiên khách hiện tại -> họ bị đăng xuất ngay, đăng nhập lại sẽ vào với tư cách nhân viên
+	if promotedCustomerID != 0 {
+		_ = s.store.InvalidateSessions(r.Context(), auth.SubjectCustomer, promotedCustomerID)
 	}
 	actor, _ := identity(r)
 	_ = s.store.InsertLog(r.Context(), actor.SubjectID, s.actorName(r.Context(), actor), "user.create", "user", u.ID, jsonObj2("username", u.Username, "role", u.Role))
@@ -89,6 +115,8 @@ func (s *Server) handleUpdateUserRole(w http.ResponseWriter, r *http.Request) {
 		handleStoreErr(w, err)
 		return
 	}
+	// đổi quyền -> vô hiệu phiên cũ (token mang role cũ) để buộc đăng nhập lại
+	_ = s.store.InvalidateSessions(r.Context(), auth.SubjectUser, id)
 	_ = s.store.InsertLog(r.Context(), actor.SubjectID, s.actorName(r.Context(), actor), "user.role", "user", u.ID, jsonObj2("username", u.Username, "role", u.Role))
 	writeJSON(w, http.StatusOK, u)
 }
@@ -114,6 +142,8 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		handleStoreErr(w, err)
 		return
 	}
+	// xoá/ngưng nhân viên -> vô hiệu mọi phiên hiện tại của họ (đăng xuất ngay)
+	_ = s.store.InvalidateSessions(r.Context(), auth.SubjectUser, id)
 	action := "user.delete"
 	if !hard {
 		action = "user.deactivate"

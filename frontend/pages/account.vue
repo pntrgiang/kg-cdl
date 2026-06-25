@@ -4,12 +4,17 @@ const api = useApi()
 
 const vouchers = ref<any[]>([])
 const bookings = ref<any[]>([])
+const me = ref<any>(null)
 const loaded = ref(false)
+
+// hạng thành viên hiện tại (ưu tiên dữ liệu mới từ /api/me, fallback dữ liệu phiên đăng nhập)
+const rank = computed(() => me.value?.rank || (auth.customer as any)?.rank || 'regular')
 
 onMounted(async () => {
   auth.hydrate()
-  if (!auth.isAuthed) { navigateTo('/customer/login'); return }
+  if (!auth.isAuthed) { navigateTo('/login'); return }
   if (auth.isCustomer) {
+    try { const r = await api.get<{ customer: any }>('/api/me'); me.value = r.customer } catch {}
     try { const r = await api.get<{ vouchers: any[] }>('/api/me/prizes'); vouchers.value = r.vouchers || [] } catch {}
     try { const r = await api.get<{ bookings: any[] }>('/api/me/bookings'); bookings.value = r.bookings || [] } catch {}
   }
@@ -29,7 +34,19 @@ const bookingStatus: Record<string, { label: string; cls: string }> = {
 <template>
   <section class="mx-auto max-w-md">
     <h1 class="mb-1 font-serif text-2xl font-bold text-brand-900">🔐 Tài khoản của tôi</h1>
-    <p class="mb-6 text-sm text-slate-500">{{ auth.displayName }}</p>
+    <div class="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+      <span>{{ auth.displayName }}</span>
+      <template v-if="auth.isCustomer">
+        <span class="text-slate-300">·</span>
+        <template v-if="me?.exclude_from_rank">
+          <span class="badge bg-slate-100 text-slate-500">🏷️ Tài khoản tạm (không xếp hạng)</span>
+        </template>
+        <template v-else>
+          <span>Hạng thành viên:</span>
+          <RankBadge :rank="rank" />
+        </template>
+      </template>
+    </div>
 
     <!-- lịch đặt xem xe của tôi -->
     <div v-if="auth.isCustomer && loaded && bookings.length" class="mb-6">

@@ -3,6 +3,6 @@ export default defineNuxtRouteMiddleware((to) => {
   const auth = useAuthStore()
   auth.hydrate()
   if (!auth.isAuthed) {
-    return navigateTo(`/customer/login?redirect=${encodeURIComponent(to.fullPath)}`)
+    return navigateTo(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
   }
 })

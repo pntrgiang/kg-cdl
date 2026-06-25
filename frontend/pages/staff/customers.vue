@@ -81,6 +81,38 @@ const salesSummary = computed(() => {
   return { count: valid.length, total: valid.reduce((a, s) => a + s.final_price, 0), refunded: salesList.value.filter((s) => s.refunded).length }
 })
 
+// ── Chuyển giao dịch sang khách thật (chỉ với tài khoản tạm như LUX00000) ──
+const transferFor = ref<any>(null) // sale đang chuyển
+const tSearch = ref('')
+const tResults = ref<any[]>([])
+const tPicked = ref<any>(null)
+const transferring = ref(false)
+let tt: any
+watch(tSearch, (q) => {
+  clearTimeout(tt)
+  tt = setTimeout(async () => {
+    if (q.trim().length < 2) { tResults.value = []; return }
+    try {
+      const all = await api.get<any[]>(`/api/customers?search=${encodeURIComponent(q)}`)
+      // loại tài khoản tạm + chính nguồn đang xem
+      tResults.value = (all || []).filter((c) => !c.exclude_from_rank && c.id !== salesFor.value?.id)
+    } catch { tResults.value = [] }
+  }, 250)
+})
+function openTransfer(sale: any) { transferFor.value = sale; tSearch.value = ''; tResults.value = []; tPicked.value = null }
+async function doTransfer() {
+  if (!tPicked.value) { msg.value = 'Chọn khách hàng nhận.'; return }
+  transferring.value = true; msg.value = ''; okMsg.value = ''
+  try {
+    await api.post(`/api/sales/${transferFor.value.id}/transfer`, { customer_id: tPicked.value.id })
+    okMsg.value = `Đã chuyển "${transferFor.value.vehicle_name}" sang ${tPicked.value.full_name} (${tPicked.value.national_id}).`
+    transferFor.value = null
+    const src = salesFor.value
+    await Promise.all([openSales(src), refresh()]) // tải lại lịch sử + danh sách khách (rank/chi tiêu đổi)
+  } catch (e: any) { msg.value = e?.data?.error || 'Chuyển giao dịch thất bại.' }
+  finally { transferring.value = false }
+}
+
 // reset mật khẩu khách (chỉ dev) -> đặt lại bằng chính số căn cước.
 async function resetPassword(c: any) {
   msg.value = ''; okMsg.value = ''
@@ -157,7 +189,10 @@ async function removeCustomer(c: any) {
             <td class="p-3">{{ c.national_id }}</td>
             <td class="p-3">{{ genderLabel(c.gender) }}</td>
             <td class="whitespace-nowrap p-3">{{ c.birth_date || '—' }}</td>
-            <td class="p-3"><RankBadge :rank="c.rank" /></td>
+            <td class="p-3">
+              <span v-if="c.exclude_from_rank" class="badge bg-slate-100 text-slate-500" title="Tài khoản tạm — nhận xe thất lạc thông tin khách, không xếp hạng">🏷️ Tài khoản tạm</span>
+              <RankBadge v-else :rank="c.rank" />
+            </td>
             <td class="p-3 font-medium text-brand-800">{{ formatMoney(c.total_spent) }}</td>
             <td class="p-3 text-right">
               <button
@@ -195,6 +230,7 @@ async function removeCustomer(c: any) {
           <div>
             <h2 class="font-semibold text-brand-900">🚗 Xe đã mua — {{ salesFor.full_name }}</h2>
             <p class="text-xs text-slate-500">{{ salesFor.national_id }}<span v-if="salesFor.phone"> · {{ salesFor.phone }}</span></p>
+            <p v-if="salesFor.exclude_from_rank" class="mt-1 text-xs text-amber-600">🏷️ Tài khoản tạm — bấm <strong>Chuyển</strong> để chuyển từng giao dịch sang khách hàng thật.</p>
           </div>
           <button class="text-slate-400 hover:text-slate-700" @click="salesFor = null">✕</button>
         </div>
@@ -210,7 +246,7 @@ async function removeCustomer(c: any) {
           <div class="-mx-1 flex-1 overflow-auto">
             <table class="w-full min-w-[480px] text-sm">
               <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
-                <tr><th class="p-2.5">Xe</th><th class="p-2.5">Thời gian</th><th class="p-2.5">NV bán</th><th class="p-2.5 text-right">Thành tiền</th></tr>
+                <tr><th class="p-2.5">Xe</th><th class="p-2.5">Thời gian</th><th class="p-2.5">NV bán</th><th class="p-2.5 text-right">Thành tiền</th><th v-if="salesFor.exclude_from_rank" class="p-2.5"></th></tr>
               </thead>
               <tbody>
                 <tr v-for="s in salesList" :key="s.id" class="border-t" :class="s.refunded ? 'text-slate-400' : ''">
@@ -224,12 +260,43 @@ async function removeCustomer(c: any) {
                     {{ formatMoney(s.final_price) }}
                     <div v-if="s.voucher_discount > 0" class="text-[11px] font-normal text-green-600">voucher -{{ formatMoney(s.voucher_discount) }}</div>
                   </td>
+                  <td v-if="salesFor.exclude_from_rank" class="p-2.5 text-right">
+                    <button v-if="!s.refunded && auth.isManager" class="rounded-md px-2 py-0.5 text-xs text-brand-600 ring-1 ring-brand-200 hover:bg-brand-50" @click="openTransfer(s)">Chuyển</button>
+                  </td>
                 </tr>
-                <tr v-if="!salesList.length"><td colspan="4" class="p-8 text-center text-slate-400">Khách này chưa mua xe nào.</td></tr>
+                <tr v-if="!salesList.length"><td :colspan="salesFor.exclude_from_rank ? 5 : 4" class="p-8 text-center text-slate-400">Khách này chưa mua xe nào.</td></tr>
               </tbody>
             </table>
           </div>
         </template>
+      </div>
+    </div>
+
+    <!-- modal chuyển giao dịch sang khách thật -->
+    <div v-if="transferFor" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" @click.self="transferFor = null">
+      <div class="card w-full max-w-md p-5">
+        <h3 class="mb-1 font-semibold text-brand-900">Chuyển giao dịch sang khách hàng thật</h3>
+        <p class="mb-3 text-xs text-slate-500">
+          Xe: <strong>{{ transferFor.vehicle_name }}</strong> · {{ formatMoney(transferFor.final_price) }}.
+          Chi tiêu & hạng thành viên sẽ được tính lại cho khách nhận.
+        </p>
+        <label class="label">Tìm khách hàng nhận</label>
+        <input v-model="tSearch" class="input" placeholder="Tìm theo tên, SĐT, căn cước…" />
+        <div v-if="tResults.length" class="mt-1 max-h-44 space-y-1 overflow-auto rounded-lg border bg-white p-1">
+          <button
+            v-for="c in tResults" :key="c.id" type="button"
+            class="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-brand-50"
+            :class="tPicked?.id === c.id ? 'bg-brand-100' : ''"
+            @click="tPicked = c; tResults = []; tSearch = ''"
+          >
+            <strong>{{ c.full_name }}</strong><span class="text-slate-400"> · {{ c.national_id }}<span v-if="c.phone"> · {{ c.phone }}</span></span>
+          </button>
+        </div>
+        <div v-if="tPicked" class="mt-2 rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-800 ring-1 ring-brand-100">✓ {{ tPicked.full_name }} ({{ tPicked.national_id }})</div>
+        <div class="mt-5 flex justify-end gap-2">
+          <button class="btn-ghost" @click="transferFor = null">Hủy</button>
+          <button class="btn-primary" :disabled="!tPicked || transferring" @click="doTransfer">{{ transferring ? 'Đang chuyển…' : 'Chuyển' }}</button>
+        </div>
       </div>
     </div>
 

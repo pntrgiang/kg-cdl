@@ -115,6 +115,9 @@ async function submit() {
         <p v-if="err" class="text-sm text-red-600">{{ err }}</p>
         <button class="btn-primary w-full" :disabled="loading">{{ loading ? 'Đang xử lý…' : 'Đăng ký' }}</button>
       </form>
+      <div class="mt-4 text-center text-sm text-slate-500">
+        Đã có tài khoản? <NuxtLink to="/login" class="text-brand-600 hover:underline">Đăng nhập</NuxtLink>
+      </div>
     </div>
   </div>
 </template>

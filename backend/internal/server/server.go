@@ -64,7 +64,7 @@ func (s *Server) routes() {
 		// flood tổng thể nên chặn ở tầng Caddy.
 		r.Group(func(r chi.Router) {
 			r.Use(httprate.LimitByIP(20, time.Minute))
-			r.Post("/auth/login", s.handleStaffLogin)
+			r.Post("/auth/login", s.handleLogin)
 			r.Post("/auth/customer/register", s.handleCustomerRegister)
 			r.Post("/auth/customer/login", s.handleCustomerLogin)
 			r.Get("/auth/customer/lookup", s.handleCustomerLookup)
@@ -145,6 +145,7 @@ func (s *Server) routes() {
 						r.Post("/banners", s.handleCreateBanner)
 						r.Patch("/banners/{id}", s.handleToggleBanner)
 					r.Post("/sales/{id}/refund", s.handleRefundSale)
+						r.Post("/sales/{id}/transfer", s.handleTransferSale)
 					r.Put("/customers/{id}", s.handleUpdateCustomer)
 					r.Post("/events", s.handleCreateEvent)
 					r.Post("/vouchers", s.handleCreateVoucher)

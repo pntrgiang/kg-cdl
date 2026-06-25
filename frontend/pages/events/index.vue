@@ -27,7 +27,7 @@ const ongoing = computed(() => (events.value || []).filter((e: any) => e.draw_st
         Bạn đang đăng nhập với tư cách <strong>nhân viên Car Dealer</strong> — không thể tham gia sự kiện dành cho khách hàng.
       </div>
       <div v-else-if="!auth.isAuthed" class="mb-4 rounded-lg border border-gold-400 bg-gold-500/10 px-4 py-3 text-sm text-brand-800">
-        Bạn cần <NuxtLink to="/customer/login" class="font-semibold text-brand-700 underline">đăng nhập</NuxtLink>
+        Bạn cần <NuxtLink to="/login" class="font-semibold text-brand-700 underline">đăng nhập</NuxtLink>
         (hoặc <NuxtLink to="/customer/register" class="font-semibold text-brand-700 underline">đăng ký</NuxtLink>)
         để tham gia và xem chi tiết sự kiện.
       </div>

@@ -28,9 +28,10 @@ const (
 
 // Identity là chủ thể đã xác thực, lấy từ access token.
 type Identity struct {
-	SubjectType string `json:"subject_type"`
-	SubjectID   int64  `json:"subject_id"`
-	Role        string `json:"role"` // chỉ có ý nghĩa với user; customer = ""
+	SubjectType string    `json:"subject_type"`
+	SubjectID   int64     `json:"subject_id"`
+	Role        string    `json:"role"`       // chỉ có ý nghĩa với user; customer = ""
+	IssuedAt    time.Time `json:"issued_at"`  // thời điểm phát token (để so với mốc vô hiệu phiên)
 }
 
 // ── mật khẩu ─────────────────────────────────────────────────────
@@ -102,7 +103,11 @@ func (m *Manager) ParseAccessToken(tokenStr string) (Identity, error) {
 	if _, err := fmt.Sscanf(claims.Subject, "%d", &sid); err != nil {
 		return Identity{}, ErrInvalidToken
 	}
-	return Identity{SubjectType: claims.SubjectType, SubjectID: sid, Role: claims.Role}, nil
+	var iat time.Time
+	if claims.IssuedAt != nil {
+		iat = claims.IssuedAt.Time
+	}
+	return Identity{SubjectType: claims.SubjectType, SubjectID: sid, Role: claims.Role, IssuedAt: iat}, nil
 }
 
 // ── refresh token ────────────────────────────────────────────────

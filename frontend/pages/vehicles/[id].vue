@@ -148,7 +148,7 @@ const bookingLoading = ref(false)
 const todayStr = new Date().toISOString().slice(0, 10)
 function openBooking() {
   if (!auth.isCustomer) {
-    return navigateTo(`/customer/login?redirect=${encodeURIComponent(route.fullPath)}`)
+    return navigateTo(`/login?redirect=${encodeURIComponent(route.fullPath)}`)
   }
   bookingDate.value = ''; bookingNote.value = ''; bookingMsg.value = ''; bookingOk.value = ''
   showBooking.value = true

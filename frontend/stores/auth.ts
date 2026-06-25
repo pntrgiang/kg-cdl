@@ -104,6 +104,19 @@ export const useAuthStore = defineStore('auth', {
       this.setSession('customer', res.token, res.customer)
     },
 
+    // Đăng nhập GỘP: 1 form cho cả nhân viên & khách. Backend tự nhận diện loại tài khoản.
+    // Trả về 'user' (nhân viên) hoặc 'customer' (khách) để điều hướng.
+    async login(username: string, password: string): Promise<'user' | 'customer'> {
+      const api = useApiBase()
+      const res = await $fetch<{ token: TokenPair; type: 'user' | 'customer'; user?: User; customer?: Customer }>(
+        `${api}/api/auth/login`,
+        { method: 'POST', body: { username, password } },
+      )
+      if (res.type === 'user' && res.user) this.setSession('user', res.token, res.user)
+      else if (res.customer) this.setSession('customer', res.token, res.customer)
+      return res.type
+    },
+
     async registerCustomer(body: { username: string; password: string; national_id: string; full_name?: string; phone?: string }) {
       const api = useApiBase()
       const res = await $fetch<{ token: TokenPair; customer: Customer }>(`${api}/api/auth/customer/register`, {

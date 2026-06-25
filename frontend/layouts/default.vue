@@ -71,8 +71,8 @@ useHead({
           <button class="block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-brand-100 hover:bg-white/10" @click="doLogout">Đăng xuất</button>
         </template>
         <template v-else>
-          <NuxtLink to="/customer/login" class="block rounded-lg px-3 py-2.5 text-sm font-medium text-brand-100 hover:bg-white/10">Đăng nhập khách hàng</NuxtLink>
-          <NuxtLink to="/login" class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-gold-400 hover:bg-white/10">Đăng nhập nhân viên</NuxtLink>
+          <NuxtLink to="/login" class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-gold-400 hover:bg-white/10">Đăng nhập</NuxtLink>
+          <NuxtLink to="/customer/register" class="block rounded-lg px-3 py-2.5 text-sm font-medium text-brand-100 hover:bg-white/10">Đăng ký</NuxtLink>
         </template>
       </div>
     </aside>
@@ -124,10 +124,10 @@ useHead({
             >Đăng xuất</button>
           </template>
           <template v-else>
-            <NuxtLink to="/customer/login" class="btn-ghost !border-white/30 !bg-transparent !py-1.5 text-xs !text-white hover:!bg-white/10">
-              Khách hàng
+            <NuxtLink to="/customer/register" class="btn-ghost !border-white/30 !bg-transparent !py-1.5 text-xs !text-white hover:!bg-white/10">
+              Đăng ký
             </NuxtLink>
-            <NuxtLink to="/login" class="btn-gold !py-1.5 text-xs">Nhân viên</NuxtLink>
+            <NuxtLink to="/login" class="btn-gold !py-1.5 text-xs">Đăng nhập</NuxtLink>
           </template>
         </div>
       </div>

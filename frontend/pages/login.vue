@@ -5,13 +5,16 @@ const username = ref('')
 const password = ref('')
 const err = ref('')
 const loading = ref(false)
+const showForgot = ref(false)
 
 async function submit() {
   err.value = ''
   loading.value = true
   try {
-    await auth.loginStaff(username.value, password.value)
-    navigateTo((route.query.redirect as string) || '/staff')
+    const type = await auth.login(username.value, password.value)
+    const redirect = route.query.redirect as string
+    // nhân viên/quản lý -> bảng điều khiển; khách -> trang khách
+    navigateTo(redirect || (type === 'user' ? '/staff' : '/'))
   } catch (e: any) {
     err.value = e?.data?.error || 'Đăng nhập thất bại.'
   } finally {
@@ -25,7 +28,7 @@ async function submit() {
     <div class="card p-6">
       <div class="mb-6 text-center">
         <img src="/logo.png" class="mx-auto h-14 w-14 object-contain" alt="Kanji Group" />
-        <h1 class="mt-2 font-serif text-xl font-bold text-brand-900">Đăng nhập nhân viên</h1>
+        <h1 class="mt-2 font-serif text-xl font-bold text-brand-900">Đăng nhập</h1>
         <p class="text-sm text-slate-500">Kanji Group — Car Dealer</p>
       </div>
       <form class="space-y-4" @submit.prevent="submit">
@@ -40,8 +43,16 @@ async function submit() {
         <p v-if="err" class="text-sm text-red-600">{{ err }}</p>
         <button class="btn-primary w-full" :disabled="loading">{{ loading ? 'Đang xử lý…' : 'Đăng nhập' }}</button>
       </form>
+
+      <button type="button" class="mt-3 w-full text-center text-xs text-slate-400 hover:text-brand-600 hover:underline" @click="showForgot = !showForgot">
+        Quên mật khẩu?
+      </button>
+      <p v-if="showForgot" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        Vì lý do bảo mật, vui lòng <strong>liên hệ quản lý Car Dealer</strong> để được đặt lại mật khẩu. Sau khi được đặt lại, bạn đăng nhập bằng mật khẩu mới rồi tự đổi lại trong trang “Tài khoản của tôi”.
+      </p>
+
       <div class="mt-4 text-center text-sm text-slate-500">
-        Là khách hàng? <NuxtLink to="/customer/login" class="text-brand-600 hover:underline">Đăng nhập tại đây</NuxtLink>
+        Chưa có tài khoản? <NuxtLink to="/customer/register" class="text-brand-600 hover:underline">Đăng ký</NuxtLink>
       </div>
     </div>
   </div>

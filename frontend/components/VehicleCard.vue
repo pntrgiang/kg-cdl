@@ -54,19 +54,19 @@ const isLow = computed(() => badge.value === STATUS.low)
         <span v-else style="font-size:32px;">🚗</span>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-        <div style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;color:#4a4d54;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a2a7af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5V11"></path><path d="M3 12.5A1.5 1.5 0 0 1 4.5 11 1.5 1.5 0 0 1 6 12.5V15h12v-2.5A1.5 1.5 0 0 1 19.5 11 1.5 1.5 0 0 1 21 12.5V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"></path><path d="M6 18v1.5M18 18v1.5"></path></svg>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:500;color:#4a4d54;white-space:nowrap;min-width:0;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a2a7af" stroke-width="1.8" style="flex-shrink:0;" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5V11"></path><path d="M3 12.5A1.5 1.5 0 0 1 4.5 11 1.5 1.5 0 0 1 6 12.5V15h12v-2.5A1.5 1.5 0 0 1 19.5 11 1.5 1.5 0 0 1 21 12.5V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"></path><path d="M6 18v1.5M18 18v1.5"></path></svg>
           <span>{{ seatsLabel }}</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;color:#4a4d54;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a2a7af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.6"></circle><path d="M7 8.2h10a1.6 1.6 0 0 1 1.55 1.2l2 8A1.6 1.6 0 0 1 19 19.4H5a1.6 1.6 0 0 1-1.55-2l2-8A1.6 1.6 0 0 1 7 8.2Z"></path></svg>
+        <div style="display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:500;color:#4a4d54;white-space:nowrap;min-width:0;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a2a7af" stroke-width="1.8" style="flex-shrink:0;" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.6"></circle><path d="M7 8.2h10a1.6 1.6 0 0 1 1.55 1.2l2 8A1.6 1.6 0 0 1 19 19.4H5a1.6 1.6 0 0 1-1.55-2l2-8A1.6 1.6 0 0 1 7 8.2Z"></path></svg>
           <span>{{ trunkLabel }}</span>
         </div>
       </div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <span style="font-size:15px;font-weight:700;color:#1c1f24;">
+      <div class="vc-footer">
+        <span style="font-size:15px;font-weight:700;color:#1c1f24;white-space:nowrap;">
           <span v-if="hasDiscount" style="font-size:12px;font-weight:500;color:#a2a7af;text-decoration:line-through;margin-right:6px;">{{ formatMoney(item.base_price) }}</span>
           {{ formatMoney(item.final_price) }}
         </span>
@@ -94,6 +94,14 @@ const isLow = computed(() => badge.value === STATUS.low)
   padding: 26px 18px 24px;
   box-shadow: 0 1px 2px rgba(20, 23, 28, 0.04);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Giá + trạng thái: trạng thái luôn nằm DƯỚI dòng giá (tránh chen ngang gây xuống dòng xấu trên mobile). */
+.vc-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 /* Card thường: hover viền tím + bóng tím nhẹ */
 .vc:hover .vc-inner-normal {

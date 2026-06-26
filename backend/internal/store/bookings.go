@@ -17,6 +17,21 @@ var (
 	ErrBookingHandled = fmt.Errorf("booking already handled")
 )
 
+// CountNewBookings: số lịch đặt được tạo SAU thời điểm nhân viên xem gần nhất (badge thông báo).
+func (s *Store) CountNewBookings(ctx context.Context, userID int64) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM bookings
+		WHERE created_at > (SELECT bookings_seen_at FROM users WHERE id = $1)`, userID).Scan(&n)
+	return n, err
+}
+
+// MarkBookingsSeen: đánh dấu nhân viên đã xem danh sách lịch (badge về 0).
+func (s *Store) MarkBookingsSeen(ctx context.Context, userID int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET bookings_seen_at = now() WHERE id = $1`, userID)
+	return err
+}
+
 // SetBookingOpen bật/tắt nhận đặt lịch cho 1 mục kho (chỉ quản lý — enforce ở handler).
 func (s *Store) SetBookingOpen(ctx context.Context, inventoryID int64, open bool) error {
 	ct, err := s.pool.Exec(ctx, `UPDATE inventory SET booking_open = $2, updated_at = now() WHERE id = $1`, inventoryID, open)

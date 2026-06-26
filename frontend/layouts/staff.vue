@@ -28,7 +28,30 @@ const roleLabel = computed(() => ({ dev: 'Dev', manager: 'Quản lý', staff: 'N
 // menu điều hướng trên điện thoại/tablet nhỏ
 const navOpen = ref(false)
 const route = useRoute()
-watch(() => route.fullPath, () => { navOpen.value = false })
+
+// ── Thông báo lịch đặt mới (badge kiểu Facebook, riêng từng nhân viên) ──
+const api = useApi()
+const bookingCount = ref(0)
+let pollTimer: any = null
+async function refreshBookingCount() {
+  try { bookingCount.value = (await api.get<{ count: number }>('/api/bookings/unseen-count')).count } catch {}
+}
+async function markBookingsSeen() {
+  bookingCount.value = 0
+  try { await api.post('/api/bookings/seen') } catch {}
+}
+onMounted(() => {
+  if (route.path.startsWith('/staff/bookings')) markBookingsSeen() // đang xem -> coi như đã xem
+  else refreshBookingCount()
+  // cứ 30s kiểm tra lịch mới (chỉ khi không ở trang đặt lịch)
+  pollTimer = setInterval(() => { if (!route.path.startsWith('/staff/bookings')) refreshBookingCount() }, 30000)
+})
+onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
+
+watch(() => route.fullPath, (p) => {
+  navOpen.value = false
+  if (p.startsWith('/staff/bookings')) markBookingsSeen() // bấm vào xem -> badge mất
+})
 </script>
 
 <template>
@@ -56,7 +79,10 @@ watch(() => route.fullPath, () => { navOpen.value = false })
           v-for="l in links" :key="l.to" :to="l.to"
           class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-brand-100 transition-colors hover:bg-white/10"
           active-class="bg-white/15 text-white"
-        ><span>{{ l.icon }}</span>{{ l.label }}</NuxtLink>
+        >
+          <span>{{ l.icon }}</span>{{ l.label }}
+          <span v-if="l.to === '/staff/bookings' && bookingCount > 0" class="ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold leading-none text-white">{{ bookingCount > 99 ? '99+' : bookingCount }}</span>
+        </NuxtLink>
       </nav>
       <!-- hành động tài khoản -->
       <div class="shrink-0 border-t border-white/10 p-2">
@@ -70,9 +96,11 @@ watch(() => route.fullPath, () => { navOpen.value = false })
       <div class="flex items-center justify-between gap-2 px-3 py-3 sm:px-4">
         <div class="flex min-w-0 items-center gap-2">
           <button
-            class="rounded-lg p-1.5 text-xl text-white/90 hover:bg-white/10 md:hidden"
+            class="relative rounded-lg p-1.5 text-xl text-white/90 hover:bg-white/10 md:hidden"
             aria-label="Mở menu" @click="navOpen = !navOpen"
-          >☰</button>
+          >☰
+            <span v-if="bookingCount > 0" class="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-brand-900" />
+          </button>
           <NuxtLink to="/staff" class="flex min-w-0 items-center gap-2">
             <img src="/logo.png" alt="Kanji Group" class="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9" />
             <span class="truncate font-serif font-bold tracking-wide text-gold-400">KANJI GROUP</span>
@@ -105,6 +133,7 @@ watch(() => route.fullPath, () => { navOpen.value = false })
             active-class="bg-brand-100 text-brand-900"
           >
             <span>{{ l.icon }}</span>{{ l.label }}
+            <span v-if="l.to === '/staff/bookings' && bookingCount > 0" class="ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold leading-none text-white">{{ bookingCount > 99 ? '99+' : bookingCount }}</span>
           </NuxtLink>
         </nav>
       </aside>

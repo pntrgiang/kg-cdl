@@ -1,19 +1,72 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	_ "image/gif" // đăng ký decoder gif
+	_ "image/png" // đăng ký decoder png
+
 	"github.com/go-chi/chi/v5"
+	xdraw "golang.org/x/image/draw"
+	_ "golang.org/x/image/webp" // đăng ký decoder webp
 )
 
-const maxUploadBytes = 10 << 20 // 10MB
+const (
+	maxUploadBytes = 10 << 20 // 10MB (giới hạn file tải lên)
+	maxImageDim    = 1600     // cạnh dài tối đa (px) sau khi nén
+	jpegQuality    = 82       // chất lượng JPEG khi nén lại
+)
 
-// saveUpload đọc file từ multipart form (field "file"), kiểm tra là ảnh, lưu vào UploadDir với tên destName.
+// compressImage giải mã ảnh, thu nhỏ nếu cạnh dài > maxImageDim, dán lên nền trắng (xử lý alpha),
+// rồi mã hóa lại JPEG (jpegQuality). Giải mã lỗi hoặc nén ra lớn hơn -> trả về dữ liệu GỐC.
+func compressImage(data []byte) []byte {
+	src, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return data // không giải mã được -> giữ nguyên (không phá upload)
+	}
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w <= 0 || h <= 0 {
+		return data
+	}
+	nw, nh := w, h
+	if w > maxImageDim || h > maxImageDim {
+		if w >= h {
+			nw, nh = maxImageDim, h*maxImageDim/w
+		} else {
+			nw, nh = w*maxImageDim/h, maxImageDim
+		}
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
+	draw.Draw(dst, dst.Bounds(), image.White, image.Point{}, draw.Src) // nền trắng -> loại alpha
+	if nw == w && nh == h {
+		draw.Draw(dst, dst.Bounds(), src, b.Min, draw.Over)
+	} else {
+		xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, b, xdraw.Over, nil) // scale chất lượng cao
+	}
+
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: jpegQuality}); err != nil {
+		return data
+	}
+	// nếu không thu nhỏ kích thước mà file nén lại còn lớn hơn (ảnh đã tối ưu sẵn) -> giữ gốc
+	if nw == w && nh == h && out.Len() >= len(data) {
+		return data
+	}
+	return out.Bytes()
+}
+
+// saveUpload đọc file ảnh từ multipart form (field), NÉN/RESIZE lại, rồi lưu vào UploadDir với tên destName.
 // Ghi đè nếu đã tồn tại. Trả về lỗi nếu không hợp lệ.
 func (s *Server) saveUpload(r *http.Request, field, destName string) error {
 	r.Body = http.MaxBytesReader(nil, r.Body, maxUploadBytes+1024)
@@ -38,21 +91,21 @@ func (s *Server) saveUpload(r *http.Request, field, destName string) error {
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
+	raw, err := io.ReadAll(file)
+	if err != nil {
+		return err
+	}
+	data := compressImage(raw) // nén lại trước khi lưu (lỗi giải mã -> giữ nguyên)
+
 	if err := os.MkdirAll(s.cfg.UploadDir, 0o755); err != nil {
 		return err
 	}
 	dest := filepath.Join(s.cfg.UploadDir, destName)
 	tmp := dest + ".tmp"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, file); err != nil {
-		out.Close()
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		os.Remove(tmp)
 		return err
 	}
-	out.Close()
 	return os.Rename(tmp, dest) // ghi đè nguyên tử
 }
 

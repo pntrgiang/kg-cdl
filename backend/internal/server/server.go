@@ -122,6 +122,8 @@ func (s *Server) routes() {
 
 					// ── đặt lịch: nhân viên + quản lý đều xem & xử lý (nhận/từ chối) ─
 					r.Get("/bookings", s.handleListBookings)
+					r.Get("/bookings/unseen-count", s.handleUnseenBookingCount)
+					r.Post("/bookings/seen", s.handleMarkBookingsSeen)
 					r.Patch("/bookings/{id}", s.handleHandleBooking)
 
 				// ── chỉ quản lý mới được chỉnh sửa kho/danh mục/khuyến mãi/hoàn trả ─

@@ -140,3 +140,24 @@ func (s *Server) handleHandleBooking(w http.ResponseWriter, r *http.Request) {
 	_ = s.store.InsertLog(r.Context(), actor.SubjectID, s.actorName(r.Context(), actor), action, "booking", id, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": req.Status})
 }
+
+// handleUnseenBookingCount (nhân viên): số lịch đặt mới kể từ lần xem gần nhất (badge thông báo).
+func (s *Server) handleUnseenBookingCount(w http.ResponseWriter, r *http.Request) {
+	actor, _ := identity(r)
+	n, err := s.store.CountNewBookings(r.Context(), actor.SubjectID)
+	if err != nil {
+		handleStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"count": n})
+}
+
+// handleMarkBookingsSeen (nhân viên): đánh dấu đã xem -> badge về 0.
+func (s *Server) handleMarkBookingsSeen(w http.ResponseWriter, r *http.Request) {
+	actor, _ := identity(r)
+	if err := s.store.MarkBookingsSeen(r.Context(), actor.SubjectID); err != nil {
+		handleStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}

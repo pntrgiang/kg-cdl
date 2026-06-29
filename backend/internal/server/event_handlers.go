@@ -201,6 +201,7 @@ type createDrawReq struct {
 	RegisterDeadline time.Time `json:"register_deadline"`
 	VoucherID        *int64    `json:"voucher_id"`
 	WinnersCount     int       `json:"winners_count"`
+	CustomerIDs      []int64   `json:"customer_ids"` // chỉ định sẵn người tham gia; rỗng = mở cho mọi người đăng ký
 }
 
 func (s *Server) handleCreateDrawEvent(w http.ResponseWriter, r *http.Request) {
@@ -238,7 +239,7 @@ func (s *Server) handleCreateDrawEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	actor, _ := identity(r)
 	e, err := s.store.CreateDrawEvent(r.Context(), req.Title, req.Description, req.RegisterDeadline,
-		"voucher", req.VoucherID, nil, req.WinnersCount, actor.SubjectID)
+		"voucher", req.VoucherID, nil, req.WinnersCount, req.CustomerIDs, actor.SubjectID)
 	if err != nil {
 		handleStoreErr(w, err)
 		return

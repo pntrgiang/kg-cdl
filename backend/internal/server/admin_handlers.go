@@ -78,9 +78,12 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "username hoặc số căn cước đã tồn tại")
 		return
 	}
-	// thăng cấp: vô hiệu phiên khách hiện tại -> họ bị đăng xuất ngay, đăng nhập lại sẽ vào với tư cách nhân viên
+	// thăng cấp: vô hiệu phiên khách hiện tại -> họ bị đăng xuất ngay, đăng nhập lại sẽ vào với tư cách nhân viên;
+	// đồng thời xếp lại hạng để loại tài khoản khách này khỏi bảng xếp hạng thành viên (nhân viên không được xếp hạng).
 	if promotedCustomerID != 0 {
 		_ = s.store.InvalidateSessions(r.Context(), auth.SubjectCustomer, promotedCustomerID)
+		limits, _ := s.store.GetRankLimits(r.Context())
+		_ = s.store.RecomputeRanks(r.Context(), limits.SVIP, limits.VIP)
 	}
 	actor, _ := identity(r)
 	_ = s.store.InsertLog(r.Context(), actor.SubjectID, s.actorName(r.Context(), actor), "user.create", "user", u.ID, jsonObj2("username", u.Username, "role", u.Role))
@@ -144,6 +147,13 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	// xoá/ngưng nhân viên -> vô hiệu mọi phiên hiện tại của họ (đăng xuất ngay)
 	_ = s.store.InvalidateSessions(r.Context(), auth.SubjectUser, id)
+	// loại bỏ nhân viên -> trở lại làm khách hàng: tài khoản khách (cùng CCCD) BẮT ĐẦU LẠI TỪ PHỔ THÔNG
+	// (chi tiêu = 0, xem như chưa từng mua xe), rồi xếp lại hạng toàn bộ.
+	if u.NationalID != nil && strings.TrimSpace(*u.NationalID) != "" {
+		_ = s.store.ResetCustomerSpendingByNationalID(r.Context(), strings.TrimSpace(*u.NationalID))
+		limits, _ := s.store.GetRankLimits(r.Context())
+		_ = s.store.RecomputeRanks(r.Context(), limits.SVIP, limits.VIP)
+	}
 	action := "user.delete"
 	if !hard {
 		action = "user.deactivate"

@@ -30,6 +30,36 @@ const voucherWarn = computed(() => {
   return `⚠️ Voucher "${v.name}" hết hạn ${formatDate(v.expires_at)} — phải SAU hạn đăng ký (${formatDate(eForm.deadline)}). Hãy chọn voucher khác hoặc đặt hạn đăng ký sớm hơn.`
 })
 
+// ── chọn người tham gia CHỈ ĐỊNH (tuỳ chọn): tìm sẵn hoặc tạo mới như khi bán xe ──
+const { data: customers, refresh: refreshCust } = await useAsyncData('evt-cust', () => api.get<any[]>('/api/customers'))
+const custSearch = ref('')
+const selectedCusts = ref<any[]>([])
+const custMatches = computed(() => {
+  const q = custSearch.value.toLowerCase().trim()
+  if (!q) return []
+  const picked = new Set(selectedCusts.value.map((c) => c.id))
+  return (customers.value || [])
+    .filter((c) => !picked.has(c.id) && `${c.full_name} ${c.phone} ${c.national_id}`.toLowerCase().includes(q))
+    .slice(0, 8)
+})
+function addCust(c: any) { if (!selectedCusts.value.find((x) => x.id === c.id)) selectedCusts.value.push(c); custSearch.value = '' }
+function removeCust(id: number) { selectedCusts.value = selectedCusts.value.filter((c) => c.id !== id) }
+
+const showNewCust = ref(false)
+const newCust = reactive({ full_name: '', phone: '', national_id: '' })
+async function createCustomer() {
+  msg.value = ''
+  if (!newCust.full_name.trim()) { msg.value = 'Cần nhập họ tên khách mới.'; return }
+  if (!isValidNationalID(newCust.national_id)) { msg.value = 'Số căn cước không hợp lệ. ' + NATIONAL_ID_HINT; return }
+  try {
+    const c = await api.post<any>('/api/customers', { ...newCust })
+    await refreshCust()
+    addCust(c)
+    newCust.full_name = newCust.phone = newCust.national_id = ''
+    showNewCust.value = false
+  } catch (e: any) { msg.value = e?.data?.error || 'Tạo khách thất bại (căn cước đã tồn tại?).' }
+}
+
 async function createEvent() {
   msg.value = ''; okMsg.value = ''
   if (!eForm.title.trim()) { msg.value = 'Cần nhập tiêu đề sự kiện.'; return }
@@ -37,14 +67,18 @@ async function createEvent() {
   if (!(Number(eForm.winners_count) >= 1)) { msg.value = 'Số người trúng phải ≥ 1.'; return }
   if (!eForm.voucher_id) { msg.value = 'Cần chọn voucher làm phần thưởng (tạo ở tab Voucher nếu chưa có).'; return }
   if (voucherWarn.value) { msg.value = voucherWarn.value; return }
+  const ids = selectedCusts.value.map((c) => c.id)
+  if (ids.length && Number(eForm.winners_count) > ids.length) { msg.value = `Số người trúng (${eForm.winners_count}) không thể nhiều hơn số người được chỉ định (${ids.length}).`; return }
   try {
     await api.post('/api/events/draw', {
       title: eForm.title, description: eForm.description,
       register_deadline: `${eForm.deadline}T23:59:59+07:00`,
       voucher_id: eForm.voucher_id, winners_count: Number(eForm.winners_count),
+      customer_ids: ids,
     })
-    okMsg.value = 'Đã tạo sự kiện quay số.'
+    okMsg.value = ids.length ? `Đã tạo sự kiện chỉ định (${ids.length} người tham gia).` : 'Đã tạo sự kiện quay số (mở đăng ký).'
     eForm.title = eForm.description = ''
+    selectedCusts.value = []
     await refreshEvents()
   } catch (e: any) { msg.value = e?.data?.error || 'Tạo sự kiện thất bại.' }
 }
@@ -165,7 +199,47 @@ const fmtDate = (s: string) => formatDate(s)
           </p>
         </div>
 
-        <button class="btn-gold md:col-span-2 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!!voucherWarn" @click="createEvent">Tạo sự kiện</button>
+        <!-- người tham gia chỉ định (tuỳ chọn) -->
+        <div class="md:col-span-2">
+          <label class="label">Người tham gia chỉ định <span class="font-normal text-slate-400">(tuỳ chọn)</span></label>
+          <p class="mb-1.5 text-xs text-slate-500">
+            Chọn người cụ thể → <strong>chỉ những người này</strong> vào vòng quay (không cần đăng ký).
+            <strong>Để trống = mở cho mọi người đăng ký.</strong>
+          </p>
+          <div v-if="selectedCusts.length" class="mb-2 flex flex-wrap gap-1.5">
+            <span v-for="c in selectedCusts" :key="c.id" class="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-1 text-xs text-brand-800">
+              {{ c.full_name }} ({{ c.national_id }})
+              <button type="button" class="text-brand-500 hover:text-red-600" @click="removeCust(c.id)">✕</button>
+            </span>
+          </div>
+          <input v-model="custSearch" class="input" placeholder="Tìm khách theo tên / SĐT / căn cước…" />
+          <div v-if="custMatches.length" class="mt-1 max-h-44 space-y-1 overflow-auto rounded-lg border bg-white p-1">
+            <button
+              v-for="c in custMatches" :key="c.id" type="button"
+              class="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-brand-50"
+              @click="addCust(c)"
+            >
+              <strong>{{ c.full_name }}</strong><span class="text-slate-400"> · {{ c.national_id }}<span v-if="c.phone"> · {{ c.phone }}</span></span>
+            </button>
+          </div>
+          <p v-else-if="custSearch.trim().length >= 1" class="mt-1 text-xs text-slate-400">Không tìm thấy khách phù hợp — có thể tạo mới bên dưới.</p>
+
+          <div class="mt-1.5">
+            <button type="button" class="text-xs font-medium text-brand-600 hover:underline" @click="showNewCust = !showNewCust">
+              {{ showNewCust ? '− Đóng tạo khách mới' : '+ Tạo khách mới' }}
+            </button>
+            <div v-if="showNewCust" class="mt-2 space-y-2 rounded-lg border border-brand-100 bg-brand-50/40 p-3">
+              <input v-model="newCust.full_name" class="input !py-1.5 text-sm" placeholder="Họ tên *" />
+              <input v-model="newCust.phone" class="input !py-1.5 text-sm" placeholder="Số điện thoại" />
+              <input v-model="newCust.national_id" class="input !py-1.5 text-sm uppercase placeholder:normal-case" placeholder="Số căn cước * (LUX12345)" @input="newCust.national_id = newCust.national_id.toUpperCase()" />
+              <button type="button" class="btn-primary w-full !py-1.5 text-sm" @click="createCustomer">Lưu &amp; thêm vào danh sách</button>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-gold md:col-span-2 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!!voucherWarn" @click="createEvent">
+          {{ selectedCusts.length ? `Tạo sự kiện chỉ định (${selectedCusts.length} người)` : 'Tạo sự kiện (mở đăng ký)' }}
+        </button>
       </div>
     </div>
 
@@ -178,6 +252,7 @@ const fmtDate = (s: string) => formatDate(s)
             <strong class="text-brand-900" :class="e.cancelled_at ? 'text-slate-400 line-through' : ''">{{ e.title }}</strong>
             <span v-if="e.cancelled_at" class="badge ml-2 bg-red-100 text-red-600">Đã huỷ</span>
             <span v-else class="badge ml-2" :class="statusLabel[e.draw_status]?.c">{{ statusLabel[e.draw_status]?.t }}</span>
+            <span v-if="e.invite_only" class="badge ml-2 bg-brand-100 text-brand-700" title="Sự kiện chỉ định — chỉ người được chọn, không nhận đăng ký">🎯 Chỉ định</span>
           </div>
           <div class="flex gap-2">
             <template v-if="!e.cancelled_at">
@@ -192,7 +267,7 @@ const fmtDate = (s: string) => formatDate(s)
           <span class="badge bg-slate-100 text-slate-600">🎟️ Thưởng: {{ e.prize_name }}</span>
           <span class="badge bg-slate-100 text-slate-600">Số trúng: {{ e.winners_count }}</span>
           <span class="badge bg-slate-100 text-slate-600">Hạn: {{ fmtDate(e.register_deadline) }}</span>
-          <span class="badge bg-slate-100 text-slate-600">Đã đăng ký: {{ e.eligible_count }}</span>
+          <span class="badge bg-slate-100 text-slate-600">{{ e.invite_only ? 'Người tham gia' : 'Đã đăng ký' }}: {{ e.eligible_count }}</span>
         </div>
 
         <p v-if="e.cancelled_at" class="mt-2 text-xs text-red-500">↳ Đã huỷ{{ e.cancel_reason ? ' — lý do: ' + e.cancel_reason : '' }}</p>

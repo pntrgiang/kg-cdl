@@ -62,7 +62,7 @@ func (s *Store) CreateEvent(ctx context.Context, title, description, typ string,
 const eventSelect = `
 SELECT e.id, e.title, COALESCE(e.description,''), e.type, e.starts_at, e.ends_at, e.is_active, e.created_by, e.created_at,
        e.register_deadline, e.prize_type, e.voucher_id, e.prize_vehicle_catalog_id, e.winners_count, e.draw_status,
-       e.cancelled_at, COALESCE(e.cancel_reason,''),
+       e.invite_only, e.cancelled_at, COALESCE(e.cancel_reason,''),
        COALESCE(vc.name, vh.name, '') AS prize_name
 FROM events e
 LEFT JOIN vouchers vc ON vc.id = e.voucher_id
@@ -72,7 +72,7 @@ func scanEvent(row pgx.Row) (Event, error) {
 	var e Event
 	err := row.Scan(&e.ID, &e.Title, &e.Description, &e.Type, &e.StartsAt, &e.EndsAt, &e.IsActive, &e.CreatedBy, &e.CreatedAt,
 		&e.RegisterDeadline, &e.PrizeType, &e.VoucherID, &e.PrizeVehicleID, &e.WinnersCount, &e.DrawStatus,
-		&e.CancelledAt, &e.CancelReason, &e.PrizeName)
+		&e.InviteOnly, &e.CancelledAt, &e.CancelReason, &e.PrizeName)
 	return e, err
 }
 
@@ -80,7 +80,8 @@ func scanEvent(row pgx.Row) (Event, error) {
 func (s *Store) ListEvents(ctx context.Context, onlyActive bool) ([]Event, error) {
 	q := eventSelect
 	if onlyActive {
-		q += ` WHERE e.is_active AND e.cancelled_at IS NULL`
+		// khách: bỏ sự kiện đã huỷ và sự kiện chỉ định (invite_only) — khách không tham gia/đăng ký.
+		q += ` WHERE e.is_active AND e.cancelled_at IS NULL AND NOT e.invite_only`
 	}
 	q += ` ORDER BY e.created_at DESC`
 	rows, err := s.pool.Query(ctx, q)
@@ -154,13 +155,17 @@ func (s *Store) listPrizes(ctx context.Context, eventID int64) ([]EventPrize, er
 func (s *Store) Register(ctx context.Context, eventID, customerID int64) error {
 	var drawStatus *string
 	var deadline *time.Time
+	var inviteOnly bool
 	err := s.pool.QueryRow(ctx,
-		`SELECT draw_status, register_deadline FROM events WHERE id = $1`, eventID).Scan(&drawStatus, &deadline)
+		`SELECT draw_status, register_deadline, invite_only FROM events WHERE id = $1`, eventID).Scan(&drawStatus, &deadline, &inviteOnly)
 	if err != nil {
 		return mapNotFound(err)
 	}
 	if drawStatus == nil {
 		return ErrNotDrawEvent
+	}
+	if inviteOnly {
+		return ErrInviteOnly // sự kiện chỉ định -> không nhận đăng ký
 	}
 	if *drawStatus != "open" {
 		return ErrBadDrawState // đã quay/công bố -> không nhận đăng ký nữa

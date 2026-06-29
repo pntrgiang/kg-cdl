@@ -32,6 +32,15 @@ func (s *Store) GetCustomerByNationalID(ctx context.Context, nationalID string) 
 	return c, mapNotFound(err)
 }
 
+// ResetCustomerSpendingByNationalID đưa khách về "chưa từng mua xe": chi tiêu = 0, hạng Phổ thông.
+// Dùng khi một nhân viên/quản lý bị loại bỏ -> trở lại làm khách hàng, bắt đầu từ phổ thông.
+func (s *Store) ResetCustomerSpendingByNationalID(ctx context.Context, nationalID string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE customers SET total_spent = 0, rank = 'regular', last_purchase_at = NULL, updated_at = now()
+		WHERE national_id = $1`, nationalID)
+	return err
+}
+
 // GetCustomerAuthByNationalID trả id + password_hash của khách theo số căn cước
 // (hash rỗng nếu khách chưa có tài khoản). Dùng khi thăng cấp khách thành nhân viên.
 func (s *Store) GetCustomerAuthByNationalID(ctx context.Context, nationalID string) (int64, string, error) {

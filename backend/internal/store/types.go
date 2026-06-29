@@ -134,6 +134,7 @@ type Event struct {
 	PrizeVehicleID   *int64     `json:"prize_vehicle_catalog_id"`
 	WinnersCount     *int       `json:"winners_count"`
 	DrawStatus       *string    `json:"draw_status"` // 'open' | 'drawn' | 'published'
+	InviteOnly       bool       `json:"invite_only"` // true = chỉ người được chỉ định (không nhận đăng ký)
 	CancelledAt      *time.Time `json:"cancelled_at"`
 	CancelReason     string     `json:"cancel_reason"`
 	PrizeName        string     `json:"prize_name"`

@@ -11,6 +11,7 @@ var (
 	ErrBadDrawState       = errors.New("invalid draw state")
 	ErrNoEligible         = errors.New("no eligible participants")
 	ErrRegistrationClosed = errors.New("registration closed")
+	ErrInviteOnly         = errors.New("event is invite-only")
 	ErrEventNotCancelable = errors.New("event cannot be cancelled")
 )
 
@@ -53,23 +54,33 @@ func (s *Store) CancelEvent(ctx context.Context, eventID, cancelledBy int64, act
 }
 
 // CreateDrawEvent tạo sự kiện quay số trúng thưởng (chỉ manager — enforce ở handler).
-func (s *Store) CreateDrawEvent(ctx context.Context, title, description string, deadline time.Time, prizeType string, voucherID, vehicleCatalogID *int64, winnersCount int, createdBy int64) (Event, error) {
+func (s *Store) CreateDrawEvent(ctx context.Context, title, description string, deadline time.Time, prizeType string, voucherID, vehicleCatalogID *int64, winnersCount int, inviteCustomerIDs []int64, createdBy int64) (Event, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Event{}, err
 	}
 	defer tx.Rollback(ctx)
 
+	inviteOnly := len(inviteCustomerIDs) > 0
 	var id int64
 	err = tx.QueryRow(ctx, `
 		INSERT INTO events (title, description, type, created_by,
-		  register_deadline, prize_type, voucher_id, prize_vehicle_catalog_id, winners_count, draw_status)
-		VALUES ($1,$2,'discount_campaign',$3,$4,$5,$6,$7,$8,'open')
+		  register_deadline, prize_type, voucher_id, prize_vehicle_catalog_id, winners_count, draw_status, invite_only)
+		VALUES ($1,$2,'discount_campaign',$3,$4,$5,$6,$7,$8,'open',$9)
 		RETURNING id`,
-		title, description, createdBy, deadline, prizeType, voucherID, vehicleCatalogID, winnersCount,
+		title, description, createdBy, deadline, prizeType, voucherID, vehicleCatalogID, winnersCount, inviteOnly,
 	).Scan(&id)
 	if err != nil {
 		return Event{}, err
+	}
+	// sự kiện chỉ định: đưa sẵn người được chọn vào danh sách quay số (không cần đăng ký).
+	if inviteOnly {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO event_registrations (event_id, customer_id)
+			SELECT $1, cid FROM unnest($2::bigint[]) AS cid
+			ON CONFLICT (event_id, customer_id) DO NOTHING`, id, inviteCustomerIDs); err != nil {
+			return Event{}, err
+		}
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO activity_logs (actor_id, action, target_type, target_id, detail)

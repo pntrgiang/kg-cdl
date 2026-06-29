@@ -474,17 +474,23 @@ func (s *Store) RefundSale(ctx context.Context, saleID, refundedBy int64, actorN
 // recomputeRanksTx xếp lại rank toàn bộ khách theo total_spent.
 // Trả về map customerID -> rank mới. Ghi customer_rank_history khi có thay đổi.
 func recomputeRanksTx(ctx context.Context, tx pgx.Tx, svipLimit, vipLimit int) (map[int64]string, error) {
-	// Đưa về 'regular' những khách KHÔNG xếp hạng: tài khoản tạm (exclude_from_rank)
-	// hoặc không còn chi tiêu (total_spent <= 0, vd sau khi hoàn trả) — tránh giữ hạng cũ.
+	// Đưa về 'regular' những khách KHÔNG xếp hạng:
+	//   - tài khoản tạm (exclude_from_rank), hoặc
+	//   - không còn chi tiêu (total_spent <= 0, vd sau khi hoàn trả), hoặc
+	//   - là NHÂN VIÊN/QUẢN LÝ/ADMIN (có CCCD trùng một user đang hoạt động).
 	if _, err := tx.Exec(ctx, `
-		UPDATE customers SET rank = 'regular', updated_at = now()
-		WHERE rank <> 'regular' AND (exclude_from_rank OR total_spent <= 0)`); err != nil {
+		UPDATE customers c SET rank = 'regular', updated_at = now()
+		WHERE c.rank <> 'regular' AND (
+			c.exclude_from_rank OR c.total_spent <= 0
+			OR EXISTS (SELECT 1 FROM users u WHERE u.national_id = c.national_id AND u.is_active)
+		)`); err != nil {
 		return nil, err
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT id, rank FROM customers
-		WHERE is_active AND total_spent > 0 AND NOT exclude_from_rank
-		ORDER BY total_spent DESC, last_purchase_at ASC NULLS LAST, id ASC`)
+		SELECT c.id, c.rank FROM customers c
+		WHERE c.is_active AND c.total_spent > 0 AND NOT c.exclude_from_rank
+		  AND NOT EXISTS (SELECT 1 FROM users u WHERE u.national_id = c.national_id AND u.is_active)
+		ORDER BY c.total_spent DESC, c.last_purchase_at ASC NULLS LAST, c.id ASC`)
 	if err != nil {
 		return nil, err
 	}

@@ -121,6 +121,8 @@ func handleStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusConflict, "chưa có khách nào đăng ký tham gia")
 	case errors.Is(err, store.ErrRegistrationClosed):
 		writeErr(w, http.StatusConflict, "đã hết hạn đăng ký tham gia")
+	case errors.Is(err, store.ErrInviteOnly):
+		writeErr(w, http.StatusForbidden, "sự kiện này chỉ dành cho người được chỉ định, không nhận đăng ký")
 	case errors.Is(err, store.ErrPrizeInvalid):
 		writeErr(w, http.StatusConflict, "voucher hoặc giải thưởng không hợp lệ với khách này")
 	case errors.Is(err, store.ErrVoucherDepleted):
